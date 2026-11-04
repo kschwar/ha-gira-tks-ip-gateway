@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+.venv/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.pcap
+*.pcapng
+*.h264
+*.bin
+*.zip
+zugangsdaten*.txt
+*credentials*.txt
+secrets.yaml

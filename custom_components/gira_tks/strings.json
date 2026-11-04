@@ -1,0 +1,221 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Gira TKS-IP Gateway",
+        "description": "First, in the Gira TKS assistant, go to System setup > Set up HomeServer / FacilityServer > HomeServer connection data and enter the IP address of this Home Assistant system plus a user name and password. Note these credentials and enter exactly the same ones here. The gateway sends its TCP messages to the configured Home Assistant IP and the port below.",
+        "data": {
+          "gateway_host": "IP address of the TKS-IP gateway",
+          "listen_port": "TCP port for messages (default: 50050)",
+          "username": "TKS user name",
+          "password": "TKS password"
+        }
+      }
+    },
+    "error": {
+      "invalid_gateway_host": "Please enter the gateway's IPv4 address (not a host name)."
+    },
+    "abort": {
+      "already_configured": "This gateway is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "SIP and live video",
+        "description": "SIP needs a dedicated participant, created in the Gira TKS assistant under Set up TKS-Communicator. Enter that participant's SIP user name and password here; these are separate from the HomeServer connection data. A dedicated participant avoids displacing an existing SIP registration. Audio-only calls are reported as ringing but cannot be answered in Home Assistant (audio is not supported). The local IP must be reachable by the gateway; leave it empty for automatic selection. A SIP camera preview can be started independently of a door call.",
+        "data": {
+          "sip_enabled": "Enable SIP participant",
+          "sip_username": "SIP user name",
+          "sip_password": "SIP password (leave empty to keep the saved one)",
+          "local_ip": "Local IP address (empty = automatic)",
+          "sip_port": "Local SIP port",
+          "media_port": "Local H.264 RTP port",
+          "auto_answer": "Answer calls automatically",
+          "tks_door_opener_enabled": "Show door opener and light buttons (encrypted SIP channel; the SIP account must be allowed to switch by the gateway)"
+        }
+      }
+    },
+    "error": {
+      "sip_credentials_required": "SIP requires a user name and password.",
+      "invalid_local_ip": "Please enter a valid IPv4 address of this Home Assistant system."
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "ring_active": {
+        "name": "Ringing"
+      }
+    },
+    "button": {
+      "answer_call": {
+        "name": "Answer call"
+      },
+      "decline_call": {
+        "name": "Decline / end call"
+      },
+      "restart_sip": {
+        "name": "Restart SIP connection"
+      },
+      "start_camera_preview": {
+        "name": "Start camera preview"
+      },
+      "stop_camera_preview": {
+        "name": "Stop camera preview"
+      },
+      "door_opener": {
+        "name": "Door opener"
+      },
+      "light": {
+        "name": "Light"
+      }
+    },
+    "camera": {
+      "door_station": {
+        "name": "Door station"
+      },
+      "camera_preview": {
+        "name": "Door station (camera preview)"
+      }
+    },
+    "event": {
+      "door_call": {
+        "name": "Door call",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "ring": "Door call",
+              "internal_call": "Internal call",
+              "floor_call": "Floor call"
+            }
+          },
+          "aufsatz": {
+            "name": "Module"
+          },
+          "tastennummer": {
+            "name": "Button number"
+          }
+        }
+      },
+      "light_key": {
+        "name": "Light key",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "pressed": "Pressed"
+            }
+          }
+        }
+      },
+      "door_opener_key": {
+        "name": "Door opener key",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "pressed": "Pressed"
+            }
+          }
+        }
+      },
+      "call_accepted": {
+        "name": "Call accepted",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "pressed": "Pressed"
+            }
+          }
+        }
+      },
+      "call_ended": {
+        "name": "Call ended",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "pressed": "Pressed"
+            }
+          }
+        }
+      }
+    },
+    "sensor": {
+      "last_key": {
+        "name": "Last key",
+        "state": {
+          "light": "Light",
+          "door_opener": "Door opener",
+          "call_accepted": "Call accepted",
+          "call_ended": "Call ended"
+        }
+      },
+      "last_key_event": {
+        "name": "Last key event"
+      },
+      "last_door_call": {
+        "name": "Last door call",
+        "state_attributes": {
+          "aufsatz": {
+            "name": "Module"
+          },
+          "tastennummer": {
+            "name": "Button number"
+          }
+        }
+      },
+      "sip_call": {
+        "name": "TKS call",
+        "state": {
+          "disabled": "Disabled",
+          "idle": "Idle",
+          "ringing": "Ringing",
+          "answered": "Answered",
+          "ended": "Ended",
+          "ended_local": "Ended in Home Assistant",
+          "declined": "Declined",
+          "cancelled": "Cancelled",
+          "missed": "Missed",
+          "video_unavailable": "No video available",
+          "media_timeout": "Ended (no video received)",
+          "preview_starting": "Camera preview starting",
+          "preview_active": "Camera preview active",
+          "preview_ended": "Camera preview ended",
+          "preview_cancelled": "Camera preview cancelled",
+          "preview_failed": "Camera preview failed",
+          "preview_port_unavailable": "Camera preview: RTP port unavailable",
+          "preview_interrupted_by_call": "Camera preview interrupted by a call"
+        }
+      },
+      "sip_registration": {
+        "name": "SIP registration",
+        "state": {
+          "disabled": "Disabled",
+          "starting": "Starting",
+          "registered": "Registered",
+          "error": "Error",
+          "stopped": "Stopped"
+        }
+      },
+      "tcp_listener": {
+        "name": "TCP listener",
+        "state": {
+          "listening": "Listening",
+          "stopped": "Stopped"
+        }
+      },
+      "last_record": {
+        "name": "Last record"
+      },
+      "last_sip_message": {
+        "name": "Last SIP message"
+      },
+      "video_rtp_packets": {
+        "name": "Video RTP packets"
+      }
+    }
+  },
+  "exceptions": {
+    "action_failed": {
+      "message": "Action failed: {error}"
+    }
+  }
+}

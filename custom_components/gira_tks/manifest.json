@@ -1,0 +1,20 @@
+{
+  "domain": "gira_tks",
+  "name": "Gira TKS-IP Gateway",
+  "after_dependencies": [
+    "stream"
+  ],
+  "codeowners": [
+    "@kschwar"
+  ],
+  "config_flow": true,
+  "dependencies": [
+    "http",
+    "persistent_notification"
+  ],
+  "documentation": "https://github.com/kschwar/ha-gira-tks-ip-gateway",
+  "iot_class": "local_push",
+  "issue_tracker": "https://github.com/kschwar/ha-gira-tks-ip-gateway/issues",
+  "requirements": [],
+  "version": "1.0.0"
+}

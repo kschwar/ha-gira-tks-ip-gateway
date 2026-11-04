@@ -1,0 +1,221 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Gira TKS-IP Gateway",
+        "description": "Trage zuerst im Gira TKS-Assistenten unter Anlage einrichten > HomeServer / FacilityServer einrichten > HomeServer-Verbindungsdaten die IP-Adresse dieses Home Assistant-Systems und einen Benutzernamen samt Passwort ein. Notiere diese Zugangsdaten. Verwende hier anschließend genau dieselben Zugangsdaten. Das Gateway sendet die TCP-Meldungen an die eingetragene Home-Assistant-IP und den unten angegebenen Port.",
+        "data": {
+          "gateway_host": "IP-Adresse des TKS-IP-Gateways",
+          "listen_port": "TCP-Port für Meldungen (Standard: 50050)",
+          "username": "TKS-Benutzername",
+          "password": "TKS-Passwort"
+        }
+      }
+    },
+    "error": {
+      "invalid_gateway_host": "Bitte die IPv4-Adresse des Gateways eingeben (kein Hostname)."
+    },
+    "abort": {
+      "already_configured": "Dieses Gateway ist bereits eingerichtet."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "SIP und Livevideo",
+        "description": "SIP benötigt einen eigenen Teilnehmer, den du im Gira TKS-Assistenten unter TKS-Communicator einrichten anlegst. Verwende dessen SIP-Benutzername und Passwort hier; dies sind separate Zugangsdaten und nicht die HomeServer-Verbindungsdaten. Ein eigener Teilnehmer verhindert, dass eine bestehende SIP-Anmeldung verdrängt wird. Rufe ohne Video werden als Klingeln gemeldet, können in Home Assistant aber nicht angenommen werden (Audio wird nicht unterstützt). Die lokale IP muss vom Gateway erreichbar sein; leer bedeutet automatische Auswahl. Eine SIP-Kameravorschau kann unabhängig von einem Türruf gestartet werden.",
+        "data": {
+          "sip_enabled": "SIP-Teilnehmer aktivieren",
+          "sip_username": "SIP-Benutzername",
+          "sip_password": "SIP-Passwort (leer lassen, um das gespeicherte zu behalten)",
+          "local_ip": "Lokale IP-Adresse (leer = automatisch)",
+          "sip_port": "Lokaler SIP-Port",
+          "media_port": "Lokaler H.264-RTP-Port",
+          "auto_answer": "Gespräch automatisch annehmen",
+          "tks_door_opener_enabled": "Schaltbuttons Türöffner und Licht anzeigen (verschlüsselter SIP-Kanal; das SIP-Konto muss vom Gateway zum Schalten berechtigt sein)"
+        }
+      }
+    },
+    "error": {
+      "sip_credentials_required": "Für SIP werden Benutzername und Passwort benötigt.",
+      "invalid_local_ip": "Bitte eine gültige IPv4-Adresse dieses Home-Assistant-Systems eingeben."
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "ring_active": {
+        "name": "Ruf aktiv"
+      }
+    },
+    "button": {
+      "answer_call": {
+        "name": "Anruf annehmen"
+      },
+      "decline_call": {
+        "name": "Anruf ablehnen / beenden"
+      },
+      "restart_sip": {
+        "name": "SIP-Verbindung neu starten"
+      },
+      "start_camera_preview": {
+        "name": "Kameravorschau starten"
+      },
+      "stop_camera_preview": {
+        "name": "Kameravorschau beenden"
+      },
+      "door_opener": {
+        "name": "Türöffner"
+      },
+      "light": {
+        "name": "Licht"
+      }
+    },
+    "camera": {
+      "door_station": {
+        "name": "Türstation"
+      },
+      "camera_preview": {
+        "name": "Türstation (Kameravorschau)"
+      }
+    },
+    "event": {
+      "door_call": {
+        "name": "Türruf",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "ring": "Türruf",
+              "internal_call": "Internruf",
+              "floor_call": "Etagenruf"
+            }
+          },
+          "aufsatz": {
+            "name": "Aufsatz"
+          },
+          "tastennummer": {
+            "name": "Tastennummer"
+          }
+        }
+      },
+      "light_key": {
+        "name": "Lichttaste",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "pressed": "Gedrückt"
+            }
+          }
+        }
+      },
+      "door_opener_key": {
+        "name": "Türöffnertaste",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "pressed": "Gedrückt"
+            }
+          }
+        }
+      },
+      "call_accepted": {
+        "name": "Gespräch angenommen",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "pressed": "Gedrückt"
+            }
+          }
+        }
+      },
+      "call_ended": {
+        "name": "Gespräch beendet",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "pressed": "Gedrückt"
+            }
+          }
+        }
+      }
+    },
+    "sensor": {
+      "last_key": {
+        "name": "Letzte Taste",
+        "state": {
+          "light": "Licht",
+          "door_opener": "Türöffner",
+          "call_accepted": "Gespräch angenommen",
+          "call_ended": "Gespräch beendet"
+        }
+      },
+      "last_key_event": {
+        "name": "Letztes Tastenereignis"
+      },
+      "last_door_call": {
+        "name": "Letzter Türruf",
+        "state_attributes": {
+          "aufsatz": {
+            "name": "Aufsatz"
+          },
+          "tastennummer": {
+            "name": "Tastennummer"
+          }
+        }
+      },
+      "sip_call": {
+        "name": "TKS-Ruf",
+        "state": {
+          "disabled": "Deaktiviert",
+          "idle": "Bereit",
+          "ringing": "Klingelt",
+          "answered": "Angenommen",
+          "ended": "Beendet",
+          "ended_local": "In Home Assistant beendet",
+          "declined": "Abgelehnt",
+          "cancelled": "Abgebrochen",
+          "missed": "Verpasst",
+          "video_unavailable": "Kein Video verfügbar",
+          "media_timeout": "Beendet (kein Video empfangen)",
+          "preview_starting": "Kameravorschau startet",
+          "preview_active": "Kameravorschau aktiv",
+          "preview_ended": "Kameravorschau beendet",
+          "preview_cancelled": "Kameravorschau abgebrochen",
+          "preview_failed": "Kameravorschau fehlgeschlagen",
+          "preview_port_unavailable": "Kameravorschau: RTP-Port nicht verfügbar",
+          "preview_interrupted_by_call": "Kameravorschau durch Ruf unterbrochen"
+        }
+      },
+      "sip_registration": {
+        "name": "SIP-Registrierung",
+        "state": {
+          "disabled": "Deaktiviert",
+          "starting": "Startet",
+          "registered": "Registriert",
+          "error": "Fehler",
+          "stopped": "Gestoppt"
+        }
+      },
+      "tcp_listener": {
+        "name": "TCP-Listener",
+        "state": {
+          "listening": "Empfangsbereit",
+          "stopped": "Gestoppt"
+        }
+      },
+      "last_record": {
+        "name": "Letzter Datensatz"
+      },
+      "last_sip_message": {
+        "name": "Letzte SIP-Nachricht"
+      },
+      "video_rtp_packets": {
+        "name": "Video RTP-Pakete"
+      }
+    }
+  },
+  "exceptions": {
+    "action_failed": {
+      "message": "Aktion fehlgeschlagen: {error}"
+    }
+  }
+}
