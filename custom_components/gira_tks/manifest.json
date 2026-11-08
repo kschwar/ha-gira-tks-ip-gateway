@@ -4,6 +4,9 @@
   "after_dependencies": [
     "stream"
   ],
+  "categories": [
+    "security_safety.doorbells_intercoms"
+  ],
   "codeowners": [
     "@kschwar"
   ],
