@@ -29,7 +29,18 @@ and states in the configured language.
 
 ## Installation
 
-### HACS
+### HACS / Marketplace
+
+[![Open in HACS or Marketplace](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=kschwar&repository=ha-gira-tks-ip-gateway&category=integration)
+
+The integration is not yet included in the default catalog. Use the button
+above to add it as a custom repository in HACS or Marketplace.
+
+In Home Assistant 2026.11 and later, open **Settings → Marketplace** and add
+`https://github.com/kschwar/ha-gira-tks-ip-gateway` as a custom repository,
+category **Integration**. Install it and restart Home Assistant.
+
+For older Home Assistant versions with HACS:
 
 1. HACS → ⋮ → **Custom repositories** → add this repository's URL, type
    **Integration**.
@@ -167,4 +178,4 @@ actions:
 
 ## License
 
-PolyForm Strict License 1.0.0, see [LICENSE](LICENSE).
+MIT License, see [LICENSE](LICENSE).
