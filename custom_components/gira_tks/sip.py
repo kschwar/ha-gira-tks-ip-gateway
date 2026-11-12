@@ -35,6 +35,9 @@ MAX_FU_A_NAL_BYTES = 512 * 1024
 PREVIEW_AUTO_RESTART_BLOCK = 60
 TKS_STEP_TIMEOUT = 8.0
 TKS_RESEND_AFTER = 2.0
+TKS_REJECTED_BODY = "0402"
+SIP_BIND_RETRIES = 10
+SIP_BIND_RETRY_DELAY = 0.3
 REGISTER_RETRY_DELAY = 30.0
 ANSWERED_MEDIA_TIMEOUT = 60.0
 ANSWERED_MEDIA_CHECK_INTERVAL = 5.0
@@ -349,9 +352,15 @@ class SipClient(asyncio.DatagramProtocol):
         self._tks_call_id = ""
         self._tks_tag = ""
         self._tks_cseq = 0
+        self._transport_closed: asyncio.Future | None = None
 
     def connection_made(self, transport: asyncio.BaseTransport) -> None:
         self.transport = transport
+        self._transport_closed = asyncio.get_running_loop().create_future()
+
+    def connection_lost(self, exc: Exception | None) -> None:
+        if self._transport_closed and not self._transport_closed.done():
+            self._transport_closed.set_result(None)
 
     def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
         if addr[0] != self.gateway:
@@ -421,7 +430,16 @@ class SipClient(asyncio.DatagramProtocol):
 
     async def start(self) -> None:
         loop = asyncio.get_running_loop()
-        self.transport, _ = await loop.create_datagram_endpoint(lambda: self, local_addr=(self.local_ip, self.sip_port))
+        for attempt in range(SIP_BIND_RETRIES):
+            try:
+                self.transport, _ = await loop.create_datagram_endpoint(
+                    lambda: self, local_addr=(self.local_ip, self.sip_port))
+                break
+            except OSError:
+                # The previous socket may not be released yet right after stop().
+                if attempt == SIP_BIND_RETRIES - 1:
+                    raise
+                await asyncio.sleep(SIP_BIND_RETRY_DELAY)
         self._task = self.hass.async_create_background_task(self._run(), "gira_tks_sip")
 
     async def restart(self) -> None:
@@ -496,6 +514,10 @@ class SipClient(asyncio.DatagramProtocol):
                     future.set_result(msg)
             return
         method = msg.start_line.split()[0].upper()
+        if self._tks_handshake is not None:
+            _LOGGER.debug("Gira TKS handshake: incoming %s, Content-Type %r, body length %d, head %r",
+                          method, msg.header("content-type") or msg.header("c"),
+                          len(msg.body), msg.body[:4])
         if method == "INVITE":
             await self._invite(msg, addr)
         elif method == "BYE":
@@ -719,13 +741,15 @@ class SipClient(asyncio.DatagramProtocol):
         }
         try:
             sent = self._send_tks_message(tks_crypto.encode_body(0x01, tks_crypto.encrypt_block(challenge, key0)))
-            k2 = await self._tks_wait("reply02", "02 reply", sent, self._tks_cseq)
-            self._tks_handshake["k2"] = k2
-            block = tks_crypto.command_block(command)
-            sent = self._send_tks_message(tks_crypto.encode_body(0x03, tks_crypto.encrypt_block(block, k2)))
             try:
+                k2 = await self._tks_wait("reply02", "02 reply", sent, self._tks_cseq)
+                self._tks_handshake["k2"] = k2
+                block = tks_crypto.command_block(command)
+                sent = self._send_tks_message(tks_crypto.encode_body(0x03, tks_crypto.encrypt_block(block, k2)))
                 await self._tks_wait("ack03", "03 acknowledgement", sent, self._tks_cseq)
             finally:
+                # Always close the exchange, also when it is aborted after the 01,
+                # so the gateway does not keep waiting on a half-open handshake.
                 self._send_tks_message("04")
         finally:
             self._tks_handshake = None
@@ -757,7 +781,24 @@ class SipClient(asyncio.DatagramProtocol):
 
     def _tks_incoming(self, body: str) -> None:
         handshake = self._tks_handshake
-        if handshake is None or len(body) != 2 + 2 * tks_crypto.BLOCK_BYTES:
+        if handshake is None:
+            return
+        if body.upper() == TKS_REJECTED_BODY:
+            # Observed on firmware 05.04.00.08 instead of the 02 reply while the
+            # same participant was also logged in with the TKS Communicator.
+            error = tks_crypto.HandshakeError(
+                "Gateway answered 0402 instead of a 02 reply; is the SIP participant "
+                "also logged in elsewhere (e.g. the TKS Communicator)?"
+            )
+            handshake["last_error"] = str(error)
+            _LOGGER.warning("%s", error)
+            for slot in ("reply02", "ack03"):
+                if not handshake[slot].done():
+                    handshake[slot].set_result(error)
+            return
+        if len(body) != 2 + 2 * tks_crypto.BLOCK_BYTES:
+            _LOGGER.debug("Gira TKS MESSAGE during handshake with unexpected body: length %d, "
+                          "head %r, tail %r", len(body), body[:6], body[-6:])
             return
         kind = body[:2].upper()
         try:
@@ -1254,6 +1295,11 @@ class SipClient(asyncio.DatagramProtocol):
         if self.transport:
             self.transport.close()
             self.transport = None
+            if self._transport_closed is not None:
+                try:
+                    await asyncio.wait_for(asyncio.shield(self._transport_closed), 2)
+                except TimeoutError:
+                    _LOGGER.debug("SIP socket close not confirmed within 2 s")
         self._registered = False
         self.runtime.status = "stopped"
         self._changed()

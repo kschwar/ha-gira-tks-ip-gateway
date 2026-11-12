@@ -89,6 +89,8 @@ Hinweise:
 - Einen Teilnehmer verwenden, der nicht gleichzeitig woanders angemeldet ist
   (z. B. ein TKS-Communicator auf einem PC mit demselben Konto). Jede
   gleichzeitige Anmeldung zählt gegen die Teilnehmerlizenz des Gateways.
+  Ist derselbe Teilnehmer zusätzlich im TKS-Communicator angemeldet, lehnt das
+  Gateway Türöffner- und Lichtbefehle aus Home Assistant ab (Antwort `0402`).
 - **Türöffner und Licht** funktionieren nur mit einem SIP-Konto, dem das
   Gateway das Schalten erlaubt. Antwortet das Gateway nicht oder passt das
   SIP-Passwort nicht, zeigt der Button eine Fehlermeldung mit dem Grund an.
