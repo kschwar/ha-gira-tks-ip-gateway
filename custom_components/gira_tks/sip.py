@@ -17,7 +17,7 @@ from homeassistant.components.http import KEY_HASS, HomeAssistantView
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 
-from . import tks_crypto
+from . import tks_crypto, tks_video
 from .const import (
     DOMAIN,
     EVENT_SIP_MESSAGE,
@@ -149,25 +149,32 @@ class H264Rtp(asyncio.DatagramProtocol):
         self.packets += 1
         kind = payload[0] & 0x1F
         start = b"\x00\x00\x00\x01"
+        marker = bool(data[1] & 0x80)  # last packet of the access unit (RFC 6184)
         if kind != 28:
             self.fragments = None
         if 1 <= kind <= 23:
-            self.publish(start + payload)
+            self.publish(start + payload, timestamp, marker)
         elif kind == 24:
             pos = 1
+            nals = []
             while pos + 2 <= len(payload):
                 size = int.from_bytes(payload[pos:pos + 2], "big")
                 pos += 2
                 if size == 0 or pos + size > len(payload):
                     break
-                self.publish(start + payload[pos:pos + size])
+                nals.append(start + payload[pos:pos + size])
                 pos += size
+            for index, nal in enumerate(nals):
+                self.publish(nal, timestamp, marker and index == len(nals) - 1)
         elif kind == 28 and len(payload) >= 2:
             header = payload[1]
             nal_header = bytes(((payload[0] & 0xE0) | (header & 0x1F),))
             if header & 0x80:
                 self.fragments = bytearray(nal_header + payload[2:])
                 self.fragment_sequence = sequence
+                if header & 0x40:  # start and end in one packet
+                    self.publish(start + bytes(self.fragments), timestamp, marker)
+                    self.fragments = None
             elif self.fragments is not None:
                 if self.fragment_sequence is None or sequence != (self.fragment_sequence + 1) & 0xFFFF:
                     self.fragments = None
@@ -178,7 +185,7 @@ class H264Rtp(asyncio.DatagramProtocol):
                     self.fragments = None
                     return
                 if header & 0x40:
-                    self.publish(start + bytes(self.fragments))
+                    self.publish(start + bytes(self.fragments), timestamp, marker)
                     self.fragments = None
 
 
@@ -264,9 +271,9 @@ async def _serve_h264(manager: SipClient, request: web.Request) -> web.StreamRes
     await response.prepare(request)
     queue: asyncio.Queue[bytes] = asyncio.Queue(maxsize=STREAM_QUEUE_SIZE)
     manager.stream_clients.add(queue)
-    manager.runtime.stream_clients = len(manager.stream_clients)
+    manager.runtime.stream_clients = manager.viewer_count
     manager._changed()
-    _LOGGER.info("TKS H.264 stream opened (media active: %s, viewers: %d)", manager.media_active, len(manager.stream_clients))
+    _LOGGER.info("TKS H.264 stream opened (media active: %s, viewers: %d)", manager.media_active, manager.viewer_count)
     try:
         for chunk in tuple(manager.stream_buffer):
             await response.write(chunk)
@@ -284,9 +291,68 @@ async def _serve_h264(manager: SipClient, request: web.Request) -> web.StreamRes
     finally:
         manager.stream_clients.discard(queue)
         manager.stream_resync_clients.discard(queue)
-        manager.runtime.stream_clients = len(manager.stream_clients)
+        manager.runtime.stream_clients = manager.viewer_count
         manager._changed()
-        _LOGGER.info("TKS H.264 stream closed (viewers: %d, bytes sent: %d)", len(manager.stream_clients), manager.runtime.stream_bytes_sent)
+        _LOGGER.info("TKS H.264 stream closed (viewers: %d, bytes sent: %d)", manager.viewer_count, manager.runtime.stream_bytes_sent)
+    return response
+
+
+class LiveTsView(HomeAssistantView):
+
+    requires_auth = False
+    name = "api:gira_tks:live_ts"
+    url = "/api/gira_tks/{entry_id}/{token}/live.ts"
+
+    async def get(self, request: web.Request, entry_id: str, token: str) -> web.StreamResponse:
+        manager = _stream_manager(request, entry_id, token)
+        if not manager.media_active:
+            _reject_inactive(manager)
+        return await _serve_ts(manager, request)
+
+
+class PreviewTsView(HomeAssistantView):
+
+    requires_auth = False
+    name = "api:gira_tks:preview_ts"
+    url = "/api/gira_tks/{entry_id}/{token}/preview.ts"
+
+    async def get(self, request: web.Request, entry_id: str, token: str) -> web.StreamResponse:
+        manager = _stream_manager(request, entry_id, token)
+        if not await manager.ensure_preview_for_viewer():
+            _reject_inactive(manager)
+        return await _serve_ts(manager, request)
+
+
+async def _serve_ts(manager: SipClient, request: web.Request) -> web.StreamResponse:
+    """MPEG-TS with presentation timestamps, so consumers can play evenly."""
+    response = web.StreamResponse(headers={"Content-Type": "video/mp2t", "Cache-Control": "no-store"})
+    await response.prepare(request)
+    channel = manager.ts_channel
+    queue: asyncio.Queue[bytes] = asyncio.Queue(maxsize=STREAM_QUEUE_SIZE)
+    channel.clients.add(queue)
+    manager.runtime.stream_clients = manager.viewer_count
+    manager._changed()
+    _LOGGER.info("TKS MPEG-TS stream opened (media active: %s, viewers: %d)", manager.media_active, manager.viewer_count)
+    try:
+        for chunk in tuple(channel.buffer):
+            await response.write(chunk)
+            manager.runtime.stream_bytes_sent += len(chunk)
+        while manager.media_active:
+            chunk = await queue.get()
+            if not chunk:
+                break
+            await response.write(chunk)
+            manager.runtime.stream_bytes_sent += len(chunk)
+    except ConnectionResetError:
+        pass
+    except asyncio.CancelledError:
+        raise
+    finally:
+        channel.clients.discard(queue)
+        channel.resync.discard(queue)
+        manager.runtime.stream_clients = manager.viewer_count
+        manager._changed()
+        _LOGGER.info("TKS MPEG-TS stream closed (viewers: %d, bytes sent: %d)", manager.viewer_count, manager.runtime.stream_bytes_sent)
     return response
 
 
@@ -327,6 +393,13 @@ class SipClient(asyncio.DatagramProtocol):
         self.stream_buffer: deque[bytes] = deque()
         self.stream_buffer_bytes = 0
         self.stream_buffer_valid = False
+        self._raw_stream_started = False
+        self.ts_channel = tks_video.StreamChannel(STREAM_QUEUE_SIZE)
+        self._ts_muxer = tks_video.MpegTsMuxer()
+        self._frame_clock = tks_video.FrameClock()
+        self._access_unit: list[bytes] = []
+        self._access_unit_prefix: list[bytes] = []
+        self._access_unit_timestamp: int | None = None
         self.video_fmtp = ""
         self.media_lines: tuple[list[str], ...] = (["video", "0", "RTP/AVP", "96"],)
         self.sps_pps = b""
@@ -374,6 +447,50 @@ class SipClient(asyncio.DatagramProtocol):
 
     def _changed(self) -> None:
         async_dispatcher_send(self.hass, sip_updated_signal(self.entry_id))
+
+    @property
+    def viewer_count(self) -> int:
+        return len(self.stream_clients) + len(self.ts_channel.clients)
+
+    def _reset_ts_stream(self) -> None:
+        self._ts_muxer.reset()
+        self._frame_clock.reset()
+        self._access_unit = []
+        self._access_unit_prefix = []
+        self._access_unit_timestamp = None
+        self.ts_channel.clear()
+
+    def _collect_access_unit(self, chunk: bytes, rtp_timestamp: int | None, end_of_frame: bool) -> None:
+        """Group NAL units by RTP timestamp and emit one MPEG-TS PES per frame."""
+        if rtp_timestamp is None:
+            return
+        if self._access_unit and rtp_timestamp != self._access_unit_timestamp:
+            self._flush_access_unit()
+        self._access_unit.append(chunk)
+        self._access_unit_timestamp = rtp_timestamp
+        if end_of_frame:
+            self._flush_access_unit()
+
+    def _flush_access_unit(self) -> None:
+        nals, timestamp = self._access_unit, self._access_unit_timestamp
+        self._access_unit, self._access_unit_timestamp = [], None
+        if not nals or timestamp is None:
+            return
+        kinds = {nal[4] & 0x1F for nal in nals if len(nal) > 4}
+        if not kinds & {1, 2, 3, 4, 5}:
+            # Parameter sets / SEI without a picture: carry them into the next frame.
+            self._access_unit_prefix.extend(nals)
+            return
+        nals = self._access_unit_prefix + nals
+        self._access_unit_prefix = []
+        kinds = {nal[4] & 0x1F for nal in nals if len(nal) > 4}
+        keyframe = 5 in kinds
+        if keyframe and 7 not in kinds and self.sps_pps:
+            nals.insert(0, self.sps_pps)
+        pts = self._frame_clock.stamp(timestamp, time.monotonic())
+        self.ts_channel.publish(self._ts_muxer.mux(b"".join(nals), pts, keyframe), keyframe)
+        self.runtime.stream_queue_drops += self.ts_channel.drops
+        self.ts_channel.drops = 0
 
     def _register(self, cseq: int, auth: str = "", expires: int = 300) -> str:
         uri = f"sip:{self.gateway}:5060"
@@ -1120,6 +1237,7 @@ class SipClient(asyncio.DatagramProtocol):
         self.runtime.video_last_nal_type = None
         self.runtime.stream_queue_drops = 0
         self.runtime.stream_bytes_sent = 0
+        self._reset_ts_stream()
 
     def _video_sdp(self, payload: int) -> str:
         session_id = int(self.call[3], 16) if self.call else 1
@@ -1151,7 +1269,7 @@ class SipClient(asyncio.DatagramProtocol):
             self._call_last_reply = (code, reason, body, content_type)
         self.send("\r\n".join(lines) + "\r\n\r\n" + body, addr)
 
-    def _publish(self, chunk: bytes) -> None:
+    def _publish(self, chunk: bytes, rtp_timestamp: int | None = None, end_of_frame: bool = False) -> None:
         nal = chunk[4:] if chunk.startswith(b"\x00\x00\x00\x01") else b""
         if nal:
             kind = nal[0] & 0x1F
@@ -1161,6 +1279,7 @@ class SipClient(asyncio.DatagramProtocol):
                 self._pps = chunk
             if self._sps and self._pps:
                 self.sps_pps = self._sps + self._pps
+        self._collect_access_unit(chunk, rtp_timestamp, end_of_frame)
         self.runtime.video_packets = self.media_protocol.packets if self.media_protocol else 0
         if self.media_protocol:
             self.runtime.video_sequence_gaps = self.media_protocol.sequence_gaps
@@ -1188,17 +1307,18 @@ class SipClient(asyncio.DatagramProtocol):
             self.stream_buffer.append(chunk)
             self.stream_buffer_bytes += len(chunk)
             self.stream_buffer_valid = True
+            self._raw_stream_started = True
         elif self.stream_buffer_valid:
             self.stream_buffer.append(chunk)
             self.stream_buffer_bytes += len(chunk)
-            if self.stream_buffer_bytes > 2 * 1024 * 1024:
+            if self.stream_buffer_bytes > 8 * 1024 * 1024:
                 self.stream_buffer.clear()
                 self.stream_buffer_bytes = 0
                 self.stream_buffer_valid = False
         is_idr = bool(nal) and (nal[0] & 0x1F) == 5
         if is_idr:
             client_chunk = (self.sps_pps + chunk) if self.sps_pps else chunk
-        elif self.stream_buffer_valid:
+        elif self._raw_stream_started:  # keep feeding viewers even if the catch-up buffer overflowed
             client_chunk = chunk
         else:
             return
@@ -1243,6 +1363,8 @@ class SipClient(asyncio.DatagramProtocol):
                 except asyncio.QueueEmpty:
                     pass
             queue.put_nowait(b"")
+        self.ts_channel.close_all()
+        self._reset_ts_stream()
         if self.media_transport:
             self.media_transport.close()
             self.media_transport = None
@@ -1253,6 +1375,7 @@ class SipClient(asyncio.DatagramProtocol):
         self.stream_buffer.clear()
         self.stream_buffer_bytes = 0
         self.stream_buffer_valid = False
+        self._raw_stream_started = False
         self._changed()
 
     async def _unregister(self) -> None:

@@ -33,7 +33,7 @@ from .const import (
     PLATFORMS,
 )
 from .server import GatewayListener
-from .sip import LiveH264View, PreviewH264View, SipClient
+from .sip import LiveH264View, LiveTsView, PreviewH264View, PreviewTsView, SipClient
 
 _LOGGER = logging.getLogger(__name__)
 GiraTksConfigEntry = ConfigEntry
@@ -80,6 +80,8 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
     hass.data.setdefault(DOMAIN, {})
     hass.http.register_view(LiveH264View)
     hass.http.register_view(PreviewH264View)
+    hass.http.register_view(LiveTsView)
+    hass.http.register_view(PreviewTsView)
     return True
 
 
