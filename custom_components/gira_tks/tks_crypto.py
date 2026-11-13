@@ -47,7 +47,6 @@ def encode_body(type_byte: int, block256: bytes) -> str:
     return f"{type_byte:02X}" + block256.hex().upper()
 
 
-REPLY_ANSWER_BYTES = 16
 ACK_PREFIX = bytes([0x01, 0x02, 0x01])
 
 
@@ -72,18 +71,22 @@ def decode_body(body: str, type_byte: int) -> bytes:
 
 
 def stage3_key_from_reply(body: str, k1: bytes) -> bytes:
-    plain = decrypt_block(decode_body(body, 0x02), k1)
-    if any(plain[REPLY_ANSWER_BYTES:]):
-        raise HandshakeError(
-            "02 reply did not decrypt cleanly (wrong SIP password/account "
-            "or foreign reply)"
-        )
-    return next_stage_key(plain)
+    """Derive the stage-3 key from the gateway's 02 reply.
+
+    The 02 plaintext is a full 256-byte random block (a counter-challenge),
+    not 16 bytes followed by zero padding: captures of the official TKS
+    Communicator against firmware 05.04.00.08 show 16 distinct AES blocks in
+    the 02 reply, and its key derivation only works with all 256 bytes.  The
+    reply therefore cannot be validated on its own; a wrong password shows up
+    as an unreadable 03 acknowledgement instead.
+    """
+    return next_stage_key(decrypt_block(decode_body(body, 0x02), k1))
 
 
 def check_ack(body: str, k2: bytes) -> None:
     plain = decrypt_block(decode_body(body, 0x03), k2)
     if not plain.startswith(ACK_PREFIX):
         raise HandshakeError(
-            f"Unexpected 03 acknowledgement from the gateway (starts with {plain[:3].hex(' ')})"
+            f"Unexpected 03 acknowledgement from the gateway (starts with {plain[:3].hex(' ')}; "
+            "wrong SIP password or a reply from another exchange)"
         )

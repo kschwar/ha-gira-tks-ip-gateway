@@ -84,7 +84,9 @@ Notes:
 
 - Use a participant that is not logged in elsewhere at the same time (for
   example a TKS-Communicator on a PC with the same account). Each concurrent
-  login counts against the gateway's participant licence.
+  login counts against the gateway's participant licence. While the same
+  participant is also logged in with the TKS-Communicator, the gateway rejects
+  door opener and light commands from Home Assistant (it answers `0402`).
 - **Door opener and light** only work with a SIP account the gateway allows to
   switch. If the gateway does not answer or the SIP password is wrong, the
   button shows an error with the reason.
