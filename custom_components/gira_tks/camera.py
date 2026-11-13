@@ -35,7 +35,9 @@ class _SipCamera(Camera):
             identifiers={(DOMAIN, entry.entry_id)}, name=entry.title,
             manufacturer="Gira", model="TKS-IP Gateway",
         )
-        self.stream_options = {"use_wallclock_as_timestamps": True}
+        # The MPEG-TS source carries smoothed presentation timestamps (see tks_video);
+        # wallclock stamping would reintroduce the arrival jitter.
+        self.stream_options = {}
 
     @property
     def available(self) -> bool:
@@ -74,7 +76,7 @@ class GiraTksCamera(_SipCamera):
         return self.sip.media_active
 
     async def stream_source(self) -> str | None:
-        return _local_stream_url(self.hass, self.entry.entry_id, self.sip.stream_token, "live.h264")
+        return _local_stream_url(self.hass, self.entry.entry_id, self.sip.stream_token, "live.ts")
 
 
 class SipPreviewCamera(_SipCamera):
@@ -90,7 +92,7 @@ class SipPreviewCamera(_SipCamera):
         return self.sip.runtime.call_state == "preview_active" and self.sip.media_active
 
     async def stream_source(self) -> str | None:
-        return _local_stream_url(self.hass, self.entry.entry_id, self.sip.stream_token, "preview.h264")
+        return _local_stream_url(self.hass, self.entry.entry_id, self.sip.stream_token, "preview.ts")
 
 
 def _local_stream_url(hass: HomeAssistant, entry_id: str, token: str, name: str) -> str:
