@@ -1,5 +1,5 @@
 DOMAIN = "gira_tks"
-VERSION = "1.0.1"
+VERSION = "1.0.2"
 PLATFORMS = ["sensor", "binary_sensor", "camera", "button", "event"]
 
 CONF_GATEWAY_HOST = "gateway_host"
