@@ -101,3 +101,23 @@ def test_decode_body_rejects_wrong_type_and_length() -> None:
         tks.decode_body(body, 0x03)
     with pytest.raises(tks.HandshakeError):
         tks.decode_body(body[:-2], 0x02)
+
+
+def test_message_key_truncates_utf8_bytes() -> None:
+    assert tks.message_key("ä" * 10) == ("ä" * 8).encode("utf-8")
+
+
+def test_next_stage_key_caps_offset_at_240() -> None:
+    block = bytearray(range(256))
+    block[2] = 255
+    assert tks.next_stage_key(bytes(block)) == bytes(block[240:])
+
+
+def test_encrypt_rejects_short_block() -> None:
+    with pytest.raises(ValueError):
+        tks.encrypt_block(b"short", tks.message_key("x"))
+
+
+def test_decode_rejects_non_hex_body() -> None:
+    with pytest.raises(tks.HandshakeError):
+        tks.decode_body("02" + "ZZ" * 256, 0x02)
