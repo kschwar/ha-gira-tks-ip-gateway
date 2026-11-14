@@ -44,6 +44,7 @@ REGISTER_RETRY_DELAY = 30.0
 ANSWERED_MEDIA_TIMEOUT = 60.0
 ANSWERED_MEDIA_CHECK_INTERVAL = 5.0
 STREAM_QUEUE_SIZE = 32
+MAX_PREFIX_NALS = 16
 
 
 @dataclass
@@ -418,7 +419,7 @@ class SipClient(asyncio.DatagramProtocol):
         kinds = {nal[4] & 0x1F for nal in nals if len(nal) > 4}
         if not kinds & {1, 2, 3, 4, 5}:
             # Parameter sets / SEI without a picture: carry them into the next frame.
-            self._access_unit_prefix.extend(nals)
+            self._access_unit_prefix = (self._access_unit_prefix + nals)[-MAX_PREFIX_NALS:]
             return
         nals = self._access_unit_prefix + nals
         self._access_unit_prefix = []

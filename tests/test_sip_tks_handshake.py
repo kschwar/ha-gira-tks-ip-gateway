@@ -461,6 +461,13 @@ class TestPublishToTs(unittest.IsolatedAsyncioTestCase):
         client._end_call("idle")
         self.assertEqual(queue.get_nowait(), b"")
 
+    async def test_parameter_sets_without_pictures_stay_bounded(self):
+        client, _gw = make_client()
+        sps = b"\x00\x00\x00\x01\x67a"
+        for timestamp in range(0, 500 * 280, 280):
+            client._publish(sps, timestamp, True)
+        self.assertLessEqual(len(client._access_unit_prefix), sip.MAX_PREFIX_NALS)
+
 
 class TestParseSip(unittest.TestCase):
     def test_negative_content_length_gives_empty_body(self):
