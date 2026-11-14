@@ -255,29 +255,29 @@ class TestSwitchingAction(unittest.IsolatedAsyncioTestCase):
 
     async def test_queries_then_triggers_function_key_1(self):
         client, gw = make_client(replies={
-            tks.SWITCH_LIST_QUERY: self.QUERY_REPLY, tks.FUNCTION_KEY_SWITCHING: self.ACK})
+            tks.FUNCTION_KEY_1_QUERY: self.QUERY_REPLY, tks.SWITCHING_ACTION: self.ACK})
         await client.send_tks_switching_action()
-        self.assertEqual(gw.commands, [tks.SWITCH_LIST_QUERY, tks.FUNCTION_KEY_SWITCHING])
+        self.assertEqual(gw.commands, [tks.FUNCTION_KEY_1_QUERY, tks.SWITCHING_ACTION])
         self.assertEqual(gw.sent_types, ["01", "03", "04", "01", "03", "04"])
         self.assertIsNone(client._tks_handshake)
 
     async def test_query_with_several_records_uses_the_first(self):
         records = [bytes([0x02, 0x02, 0x01, 0x00, n]) for n in (1, 2, 3)]
-        client, gw = make_client(replies={tks.SWITCH_LIST_QUERY: records})
+        client, gw = make_client(replies={tks.FUNCTION_KEY_1_QUERY: records})
         async with client._tks_lock:
-            listing = await client._tks_message_exchange(tks.SWITCH_LIST_QUERY, query=True)
+            listing = await client._tks_message_exchange(tks.FUNCTION_KEY_1_QUERY, query=True)
         self.assertTrue(listing.startswith(records[0]))
 
     async def test_query_without_records_returns_empty_without_waiting(self):
-        client, gw = make_client(replies={tks.SWITCH_LIST_QUERY: []})
+        client, gw = make_client(replies={tks.FUNCTION_KEY_1_QUERY: []})
         async with client._tks_lock:
             with mock.patch.object(sip, "TKS_STEP_TIMEOUT", 10.0):
-                listing = await client._tks_message_exchange(tks.SWITCH_LIST_QUERY, query=True)
+                listing = await client._tks_message_exchange(tks.FUNCTION_KEY_1_QUERY, query=True)
         self.assertEqual(listing, b"")
 
     async def test_unassigned_function_key_fails_fast_with_hint(self):
         client, gw = make_client(replies={
-            tks.SWITCH_LIST_QUERY: self.QUERY_REPLY, tks.FUNCTION_KEY_SWITCHING: self.REJECT})
+            tks.FUNCTION_KEY_1_QUERY: self.QUERY_REPLY, tks.SWITCHING_ACTION: self.REJECT})
         loop = asyncio.get_running_loop()
         started = loop.time()
         with mock.patch.object(sip, "TKS_STEP_TIMEOUT", 10.0):

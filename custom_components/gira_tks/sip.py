@@ -787,18 +787,18 @@ class SipClient(asyncio.DatagramProtocol):
         await self._send_tks_command(tks_crypto.LIGHT, "light")
 
     async def send_tks_switching_action(self) -> None:
-        """Trigger the switching action on function key 1, like the TKS Communicator.
+        """Trigger the switching action, like the TKS Communicator.
 
-        The Communicator first queries the participant's switching action, then
+        The Communicator first queries the assignment of function key 1, then
         sends the trigger. The gateway answers 01 02 00 (rejected) unless a
         switching action is assigned to the participant's function key.
         """
         async with self._tks_lock:
-            listing = await self._tks_message_exchange(tks_crypto.SWITCH_LIST_QUERY, query=True)
-            _LOGGER.debug("Gira TKS switching action list for this participant: %s",
-                          listing.rstrip(b"\0")[:64].hex(" "))
+            assignment = await self._tks_message_exchange(tks_crypto.FUNCTION_KEY_1_QUERY, query=True)
+            _LOGGER.debug("Gira TKS function key 1 assignment of this participant: %s",
+                          assignment.rstrip(b"\0")[:64].hex(" "))
             try:
-                await self._tks_message_exchange(tks_crypto.FUNCTION_KEY_SWITCHING)
+                await self._tks_message_exchange(tks_crypto.SWITCHING_ACTION)
             except tks_crypto.CommandRejected as err:
                 raise tks_crypto.CommandRejected(
                     "Gateway rejected the switching action (01 02 00): no switching action is "
