@@ -423,6 +423,44 @@ class TestMediaRebind(unittest.IsolatedAsyncioTestCase):
             client._end_call("idle")
             await asyncio.sleep(0)
 
+    async def test_call_ended_while_binding_leaves_no_media(self):
+        client, gw = make_client()
+        client.hass.async_create_background_task.side_effect = lambda coro, name: coro.close()
+        client.local_ip, client.media_port = "127.0.0.1", _free_udp_port()
+        real_open = client._open_media
+
+        async def open_after_decline(payload_types):
+            client._end_call("declined")
+            await real_open(payload_types)
+
+        with mock.patch.object(client, "_open_media", open_after_decline):
+            await client._handle(_video_invite(), (GW, 5060))
+        await asyncio.sleep(0)
+        self.assertIsNone(client.call)
+        self.assertFalse(client.media_active)
+        self.assertIsNone(client.media_transport)
+        self.assertFalse(any(line.startswith("SIP/2.0 183") for line in gw.other_requests))
+
+    async def test_call_arriving_while_preview_binds_stops_the_preview(self):
+        client, gw = make_client()
+        client._registered = True
+        client.local_ip, client.media_port = "127.0.0.1", _free_udp_port()
+        real_open = client._open_media
+
+        async def open_during_call(payload_types):
+            client.call = (_video_invite(), (GW, 5060), None, "tag")
+            client.runtime.call_state = "ringing"
+            await real_open(payload_types)
+
+        with mock.patch.object(client, "_open_media", open_during_call):
+            with self.assertRaises(RuntimeError):
+                await client._start_camera_preview()
+        await asyncio.sleep(0)
+        self.assertIsNone(client.preview_dialog)
+        self.assertIsNone(client.media_transport)
+        self.assertEqual(client.runtime.call_state, "ringing")
+        self.assertFalse(any(line.startswith("INVITE ") for line in gw.other_requests))
+
 
 class TestMessageErrors(unittest.IsolatedAsyncioTestCase):
     async def test_failing_message_does_not_stop_processing_or_registration(self):

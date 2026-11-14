@@ -104,7 +104,8 @@ class GiraTksOptionsFlow(config_entries.OptionsFlow):
                     local_ip = str(ipaddress.IPv4Address(local_ip))
                 except ipaddress.AddressValueError:
                     errors["base"] = "invalid_local_ip"
-            if not errors and not _latin1(str(user_input.get(CONF_SIP_USERNAME, ""))):
+            if (not errors and user_input[CONF_SIP_ENABLED]
+                    and not _latin1(str(user_input.get(CONF_SIP_USERNAME, "")))):
                 errors["base"] = "invalid_sip_username"
             if not errors and user_input[CONF_SIP_ENABLED] and not (
                 user_input.get(CONF_SIP_USERNAME) and

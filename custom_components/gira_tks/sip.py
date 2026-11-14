@@ -675,6 +675,9 @@ class SipClient(asyncio.DatagramProtocol):
         if video_pt is not None:
             try:
                 await self._open_media({video_pt, 103})
+                if not self.call or self.call[0] is not msg:
+                    self._close_media()
+                    return
             except OSError as err:
                 _LOGGER.warning("Could not bind TKS video RTP port (%s)", type(err).__name__)
                 self.call = (msg, addr, None, tag)
@@ -716,6 +719,12 @@ class SipClient(asyncio.DatagramProtocol):
                 if attempt == MEDIA_BIND_RETRIES - 1:
                     raise
                 await asyncio.sleep(MEDIA_BIND_RETRY_DELAY)
+
+    def _close_media(self) -> None:
+        if self.media_transport:
+            self.media_transport.close()
+            self.media_transport = None
+        self.media_protocol = None
 
     async def _ring_timeout(self, original: SipMessage) -> None:
         await asyncio.sleep(GATEWAY_RING_TIMEOUT)
@@ -982,9 +991,13 @@ class SipClient(asyncio.DatagramProtocol):
         try:
             await self._open_media({103, 114})
         except OSError as err:
-            self.runtime.call_state = "preview_port_unavailable"
-            self._changed()
+            if not self.call:
+                self.runtime.call_state = "preview_port_unavailable"
+                self._changed()
             raise RuntimeError("Could not bind the configured H.264 RTP address/port") from err
+        if self.call:
+            self._close_media()
+            raise RuntimeError("A TKS call started while the camera preview was starting")
 
         request_uri = f"sip:CC-1@{self.gateway}"
         local_tag = secrets.token_hex(8)
@@ -1309,10 +1322,7 @@ class SipClient(asyncio.DatagramProtocol):
         self._media_watchdog_task = None
         self.ts_channel.close_all()
         self._reset_ts_stream()
-        if self.media_transport:
-            self.media_transport.close()
-            self.media_transport = None
-        self.media_protocol = None
+        self._close_media()
         self.sps_pps = b""
         self._sps = b""
         self._pps = b""
