@@ -9,7 +9,6 @@ import re
 import secrets
 import socket
 import time
-from collections import deque
 from dataclasses import dataclass, field
 
 from aiohttp import web
@@ -243,63 +242,6 @@ def _reject_inactive(manager: SipClient) -> None:
     raise web.HTTPServiceUnavailable(text="TKS call has no active H.264 media")
 
 
-class LiveH264View(HomeAssistantView):
-
-    requires_auth = False
-    name = "api:gira_tks:live_h264"
-    url = "/api/gira_tks/{entry_id}/{token}/live.h264"
-
-    async def get(self, request: web.Request, entry_id: str, token: str) -> web.StreamResponse:
-        manager = _stream_manager(request, entry_id, token)
-        if not manager.media_active:
-            _reject_inactive(manager)
-        return await _serve_h264(manager, request)
-
-
-class PreviewH264View(HomeAssistantView):
-
-    requires_auth = False
-    name = "api:gira_tks:preview_h264"
-    url = "/api/gira_tks/{entry_id}/{token}/preview.h264"
-
-    async def get(self, request: web.Request, entry_id: str, token: str) -> web.StreamResponse:
-        manager = _stream_manager(request, entry_id, token)
-        if not await manager.ensure_preview_for_viewer():
-            _reject_inactive(manager)
-        return await _serve_h264(manager, request)
-
-
-async def _serve_h264(manager: SipClient, request: web.Request) -> web.StreamResponse:
-    response = web.StreamResponse(headers={"Content-Type": "video/h264", "Cache-Control": "no-store"})
-    await response.prepare(request)
-    queue: asyncio.Queue[bytes] = asyncio.Queue(maxsize=STREAM_QUEUE_SIZE)
-    manager.stream_clients.add(queue)
-    manager.runtime.stream_clients = manager.viewer_count
-    manager._changed()
-    _LOGGER.info("TKS H.264 stream opened (media active: %s, viewers: %d)", manager.media_active, manager.viewer_count)
-    try:
-        for chunk in tuple(manager.stream_buffer):
-            await response.write(chunk)
-            manager.runtime.stream_bytes_sent += len(chunk)
-        while manager.media_active:
-            chunk = await queue.get()
-            if not chunk:
-                break
-            await response.write(chunk)
-            manager.runtime.stream_bytes_sent += len(chunk)
-    except ConnectionResetError:
-        pass
-    except asyncio.CancelledError:
-        raise
-    finally:
-        manager.stream_clients.discard(queue)
-        manager.stream_resync_clients.discard(queue)
-        manager.runtime.stream_clients = manager.viewer_count
-        manager._changed()
-        _LOGGER.info("TKS H.264 stream closed (viewers: %d, bytes sent: %d)", manager.viewer_count, manager.runtime.stream_bytes_sent)
-    return response
-
-
 class LiveTsView(HomeAssistantView):
 
     requires_auth = False
@@ -391,12 +333,6 @@ class SipClient(asyncio.DatagramProtocol):
         self._preview_task: asyncio.Task | None = None
         self._preview_lock = asyncio.Lock()
         self.stream_token = secrets.token_urlsafe(24)
-        self.stream_clients: set[asyncio.Queue[bytes]] = set()
-        self.stream_resync_clients: set[asyncio.Queue[bytes]] = set()
-        self.stream_buffer: deque[bytes] = deque()
-        self.stream_buffer_bytes = 0
-        self.stream_buffer_valid = False
-        self._raw_stream_started = False
         self.ts_channel = tks_video.StreamChannel(STREAM_QUEUE_SIZE)
         self._ts_muxer = tks_video.MpegTsMuxer()
         self._frame_clock = tks_video.FrameClock()
@@ -453,7 +389,7 @@ class SipClient(asyncio.DatagramProtocol):
 
     @property
     def viewer_count(self) -> int:
-        return len(self.stream_clients) + len(self.ts_channel.clients)
+        return len(self.ts_channel.clients)
 
     def _reset_ts_stream(self) -> None:
         self._ts_muxer.reset()
@@ -1351,43 +1287,6 @@ class SipClient(asyncio.DatagramProtocol):
             self._last_packet_report = self.runtime.video_packets
             self._last_packet_event = now
             self._changed()
-        if nal and (nal[0] & 0x1F) == 5:
-            self.stream_buffer.clear()
-            self.stream_buffer_bytes = 0
-            if self.sps_pps:
-                self.stream_buffer.append(self.sps_pps)
-                self.stream_buffer_bytes += len(self.sps_pps)
-            self.stream_buffer.append(chunk)
-            self.stream_buffer_bytes += len(chunk)
-            self.stream_buffer_valid = True
-            self._raw_stream_started = True
-        elif self.stream_buffer_valid:
-            self.stream_buffer.append(chunk)
-            self.stream_buffer_bytes += len(chunk)
-            if self.stream_buffer_bytes > 8 * 1024 * 1024:
-                self.stream_buffer.clear()
-                self.stream_buffer_bytes = 0
-                self.stream_buffer_valid = False
-        is_idr = bool(nal) and (nal[0] & 0x1F) == 5
-        if is_idr:
-            client_chunk = (self.sps_pps + chunk) if self.sps_pps else chunk
-        elif self._raw_stream_started:  # keep feeding viewers even if the catch-up buffer overflowed
-            client_chunk = chunk
-        else:
-            return
-        for queue in tuple(self.stream_clients):
-            if queue in self.stream_resync_clients:
-                if not is_idr:
-                    continue
-                self.stream_resync_clients.discard(queue)
-            if queue.full():
-                while not queue.empty():
-                    queue.get_nowait()
-                    self.runtime.stream_queue_drops += 1
-                if not is_idr:
-                    self.stream_resync_clients.add(queue)
-                    continue
-            queue.put_nowait(client_chunk)
 
     def _end_call(self, state: str) -> None:
         if self.preview_dialog is not None:
@@ -1407,15 +1306,6 @@ class SipClient(asyncio.DatagramProtocol):
         if self._media_watchdog_task and self._media_watchdog_task is not asyncio.current_task():
             self._media_watchdog_task.cancel()
         self._media_watchdog_task = None
-        self.stream_resync_clients.clear()
-        for queue in tuple(self.stream_clients):
-            if queue.full():
-                try:
-                    queue.get_nowait()
-                    self.runtime.stream_queue_drops += 1
-                except asyncio.QueueEmpty:
-                    pass
-            queue.put_nowait(b"")
         self.ts_channel.close_all()
         self._reset_ts_stream()
         if self.media_transport:
@@ -1425,10 +1315,6 @@ class SipClient(asyncio.DatagramProtocol):
         self.sps_pps = b""
         self._sps = b""
         self._pps = b""
-        self.stream_buffer.clear()
-        self.stream_buffer_bytes = 0
-        self.stream_buffer_valid = False
-        self._raw_stream_started = False
         self._changed()
 
     async def _unregister(self) -> None:

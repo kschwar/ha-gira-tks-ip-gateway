@@ -440,24 +440,26 @@ class TestMessageErrors(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(gw.ok_replies, 1)
 
 
-class TestStreamResync(unittest.IsolatedAsyncioTestCase):
-    async def test_overflowing_viewer_waits_for_next_idr(self):
+class TestPublishToTs(unittest.IsolatedAsyncioTestCase):
+    async def test_keyframe_reaches_ts_viewer_with_parameter_sets(self):
         client, _gw = make_client()
         start = b"\x00\x00\x00\x01"
         sps, pps, idr, p_frame = start + b"\x67a", start + b"\x68b", start + b"\x65c", start + b"\x41d"
-        queue = asyncio.Queue(maxsize=2)
-        client.stream_clients.add(queue)
-        for chunk in (sps, pps, idr, p_frame):
-            client._publish(chunk)
-        self.assertTrue(queue.full())
-        client._publish(p_frame)  # overflow: backlog dropped, viewer resyncs
+        queue = asyncio.Queue(maxsize=8)
+        client.ts_channel.clients.add(queue)
+        client._publish(sps, 1000, False)
+        client._publish(pps, 1000, False)
+        client._publish(p_frame, 1000, True)  # nothing decodable before the first keyframe
         self.assertTrue(queue.empty())
-        self.assertIn(queue, client.stream_resync_clients)
-        client._publish(p_frame)  # still waiting for an IDR frame
-        self.assertTrue(queue.empty())
-        client._publish(idr)
-        self.assertEqual(queue.get_nowait(), sps + pps + idr)
-        self.assertNotIn(queue, client.stream_resync_clients)
+        client._publish(idr, 1280, True)
+        keyframe = queue.get_nowait()
+        self.assertEqual(len(keyframe) % 188, 0)
+        self.assertIn(b"\x67a", keyframe)
+        self.assertIn(b"\x68b", keyframe)
+        self.assertIn(b"\x65c", keyframe)
+        self.assertTrue(client.ts_channel.buffer_valid)
+        client._end_call("idle")
+        self.assertEqual(queue.get_nowait(), b"")
 
 
 class TestParseSip(unittest.TestCase):

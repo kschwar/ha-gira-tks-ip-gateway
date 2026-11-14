@@ -235,7 +235,7 @@ class SipVideoPacketsSensor(SipSensor):
             "pps_nals_seen": runtime.video_pps_count,
             "idr_nals_seen": runtime.video_idr_count,
             "last_h264_nal_type": runtime.video_last_nal_type,
-            "decoder_bootstrap_ready": self._sip.stream_buffer_valid and bool(self._sip.sps_pps),
+            "decoder_bootstrap_ready": self._sip.ts_channel.buffer_valid and bool(self._sip.sps_pps),
             "http_viewers": runtime.stream_clients,
             "http_requests_while_idle": runtime.stream_inactive_requests,
             "http_queue_drops": runtime.stream_queue_drops,
