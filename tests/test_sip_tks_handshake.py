@@ -9,6 +9,7 @@ Run: py -m pytest tests (from the repository root)
 import asyncio
 import importlib.util
 import pathlib
+import socket
 import sys
 import types
 import unittest
@@ -374,6 +375,48 @@ class TestAnsweredMediaWatchdog(unittest.IsolatedAsyncioTestCase):
         client.runtime.call_state = "ended"
         await asyncio.wait_for(task, 1)
         self.assertEqual(gw.other_requests, [])
+
+
+def _video_invite(call_id="call2@gw"):
+    sdp = ("v=0\r\no=- 1 1 IN IP4 192.0.2.10\r\ns=-\r\nc=IN IP4 192.0.2.10\r\nt=0 0\r\n"
+           "m=video 9000 RTP/AVP 96\r\na=rtpmap:96 H264/90000\r\n")
+    raw = (f"INVITE sip:user@198.51.100.2:5070 SIP/2.0\r\n"
+           f"Via: SIP/2.0/UDP {GW}:5060;branch=z9hG4bKinv2\r\n"
+           f"From: <sip:gw@{GW}>;tag=gwtag\r\nTo: <sip:user@198.51.100.2>\r\n"
+           f"Call-ID: {call_id}\r\nCSeq: 1 INVITE\r\nContact: <sip:gw@{GW}:5060>\r\n"
+           f"Content-Type: application/sdp\r\nContent-Length: {len(sdp)}\r\n\r\n{sdp}")
+    return sip.parse_sip(raw.encode("latin-1"))
+
+
+def _free_udp_port():
+    probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        probe.bind(("127.0.0.1", 0))
+        return probe.getsockname()[1]
+    finally:
+        probe.close()
+
+
+class TestMediaRebind(unittest.IsolatedAsyncioTestCase):
+    async def test_call_during_preview_gets_the_rtp_port(self):
+        client, gw = make_client()
+        client.local_ip, client.media_port = "127.0.0.1", _free_udp_port()
+        loop = asyncio.get_running_loop()
+        client.media_transport, client.media_protocol = await loop.create_datagram_endpoint(
+            lambda: sip.H264Rtp({103, 114}, GW, client._publish), local_addr=("127.0.0.1", client.media_port))
+        client.media_active = True
+        client.preview_dialog = sip.SipPreviewDialog(
+            "sip:CC-1@gw", "preview@x", "lt", "z9hG4bKp", "<sip:user@gw>;tag=lt", "<sip:CC-1@gw>",
+            remote_to="<sip:CC-1@gw>;tag=rt", remote_target="sip:CC-1@gw", accepted=True, invite_pending=False)
+        try:
+            await client._handle(_video_invite(), (GW, 5060))
+            self.assertEqual(client.runtime.call_state, "ringing")
+            self.assertTrue(client.media_active)
+            self.assertIsNotNone(client.media_transport)
+            self.assertTrue(any(line.startswith("SIP/2.0 183") for line in gw.other_requests))
+        finally:
+            client._end_call("idle")
+            await asyncio.sleep(0)
 
 
 class TestStreamResync(unittest.IsolatedAsyncioTestCase):

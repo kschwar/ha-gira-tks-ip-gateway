@@ -39,6 +39,8 @@ TKS_REJECTED_BODY = "0402"
 TKS_QUERY_CLOSED_BODY = "0401"
 SIP_BIND_RETRIES = 10
 SIP_BIND_RETRY_DELAY = 0.3
+MEDIA_BIND_RETRIES = 10
+MEDIA_BIND_RETRY_DELAY = 0.05
 REGISTER_RETRY_DELAY = 30.0
 ANSWERED_MEDIA_TIMEOUT = 60.0
 ANSWERED_MEDIA_CHECK_INTERVAL = 5.0
@@ -734,10 +736,7 @@ class SipClient(asyncio.DatagramProtocol):
         video_available = False
         if video_pt is not None:
             try:
-                self.media_transport, self.media_protocol = await asyncio.get_running_loop().create_datagram_endpoint(
-                    lambda: H264Rtp({video_pt, 103}, self.gateway, self._publish),
-                    local_addr=(self.local_ip, self.media_port),
-                )
+                await self._open_media({video_pt, 103})
             except OSError as err:
                 _LOGGER.warning("Could not bind TKS video RTP port (%s)", type(err).__name__)
                 self.call = (msg, addr, None, tag)
@@ -765,6 +764,20 @@ class SipClient(asyncio.DatagramProtocol):
             self._ring_timeout(msg), "gira_tks_ring_timeout")
         if self.auto_answer and video_available:
             await self.answer()
+
+    async def _open_media(self, payload_types: set[int]) -> None:
+        loop = asyncio.get_running_loop()
+        for attempt in range(MEDIA_BIND_RETRIES):
+            try:
+                self.media_transport, self.media_protocol = await loop.create_datagram_endpoint(
+                    lambda: H264Rtp(payload_types, self.gateway, self._publish),
+                    local_addr=(self.local_ip, self.media_port),
+                )
+                return
+            except OSError:
+                if attempt == MEDIA_BIND_RETRIES - 1:
+                    raise
+                await asyncio.sleep(MEDIA_BIND_RETRY_DELAY)
 
     async def _ring_timeout(self, original: SipMessage) -> None:
         await asyncio.sleep(GATEWAY_RING_TIMEOUT)
@@ -1029,10 +1042,7 @@ class SipClient(asyncio.DatagramProtocol):
 
         self._reset_video_stats()
         try:
-            self.media_transport, self.media_protocol = await asyncio.get_running_loop().create_datagram_endpoint(
-                lambda: H264Rtp({103, 114}, self.gateway, self._publish),
-                local_addr=(self.local_ip, self.media_port),
-            )
+            await self._open_media({103, 114})
         except OSError as err:
             self.runtime.call_state = "preview_port_unavailable"
             self._changed()
