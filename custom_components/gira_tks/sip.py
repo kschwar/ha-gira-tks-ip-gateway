@@ -834,12 +834,26 @@ class SipClient(asyncio.DatagramProtocol):
     async def send_tks_light(self) -> None:
         await self._send_tks_command(tks_crypto.LIGHT, "light")
 
+    async def send_tks_switching_action(self) -> None:
+        """Trigger the switching action on function key 1, like the TKS Communicator.
+
+        The Communicator first queries the participant's switching action, then
+        sends the trigger. The gateway answers 01 02 00 (rejected) unless a
+        switching action is assigned to the participant's function key.
+        """
+        async with self._tks_lock:
+            listing = await self._tks_message_exchange(tks_crypto.SWITCH_LIST_QUERY, query=True)
+            _LOGGER.debug("Gira TKS switching action list for this participant: %s",
+                          bytes(listing).rstrip(b"\0")[:64].hex(" ") if isinstance(listing, (bytes, bytearray)) else listing)
+            await self._tks_message_exchange(tks_crypto.FUNCTION_KEY_SWITCHING)
+        _LOGGER.info("Gira TKS switching action command acknowledged by the gateway")
+
     async def _send_tks_command(self, command: bytes, label: str) -> None:
         async with self._tks_lock:
             await self._tks_message_exchange(command)
         _LOGGER.info("Gira TKS %s command acknowledged by the gateway", label)
 
-    async def _tks_message_exchange(self, command: bytes) -> None:
+    async def _tks_message_exchange(self, command: bytes, query: bool = False):
         if self.runtime.status != "registered":
             raise RuntimeError("SIP is not registered")
         loop = asyncio.get_running_loop()
@@ -855,6 +869,7 @@ class SipClient(asyncio.DatagramProtocol):
             "ack03": loop.create_future(),
             "last_error": None,
             "answered": set(),
+            "query": query,
         }
         try:
             sent = self._send_tks_message(tks_crypto.encode_body(0x01, tks_crypto.encrypt_block(challenge, key0)))
@@ -863,7 +878,7 @@ class SipClient(asyncio.DatagramProtocol):
                 self._tks_handshake["k2"] = k2
                 block = tks_crypto.command_block(command)
                 sent = self._send_tks_message(tks_crypto.encode_body(0x03, tks_crypto.encrypt_block(block, k2)))
-                await self._tks_wait("ack03", "03 acknowledgement", sent, self._tks_cseq)
+                return await self._tks_wait("ack03", "03 acknowledgement", sent, self._tks_cseq)
             finally:
                 # Always close the exchange, also when it is aborted after the 01,
                 # so the gateway does not keep waiting on a half-open handshake.
@@ -922,8 +937,18 @@ class SipClient(asyncio.DatagramProtocol):
             if kind == "02" and not handshake["reply02"].done():
                 handshake["reply02"].set_result(tks_crypto.stage3_key_from_reply(body, handshake["k1"]))
             elif kind == "03" and handshake["k2"] and not handshake["ack03"].done():
-                tks_crypto.check_ack(body, handshake["k2"])
-                handshake["ack03"].set_result(True)
+                if handshake.get("query"):
+                    # A query returns data instead of an ACK.
+                    plain = tks_crypto.decrypt_block(tks_crypto.decode_body(body, 0x03), handshake["k2"])
+                    handshake["ack03"].set_result(plain)
+                else:
+                    try:
+                        tks_crypto.check_ack(body, handshake["k2"])
+                    except tks_crypto.HandshakeError:
+                        plain = tks_crypto.decrypt_block(tks_crypto.decode_body(body, 0x03), handshake["k2"])
+                        _LOGGER.debug("Gira TKS 03 reply plaintext: %s", plain.rstrip(b"\0")[:48].hex(" "))
+                        raise
+                    handshake["ack03"].set_result(True)
         except tks_crypto.HandshakeError as err:
             handshake["last_error"] = str(err)
             _LOGGER.warning("Gira TKS type-%s answer ignored: %s", kind, err)

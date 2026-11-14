@@ -8,6 +8,11 @@ BLOCK_BYTES = 256
 
 DOOR_OPENER = bytes([0x04, 0x02, 0x04, 0x05])
 LIGHT = bytes([0x04, 0x02, 0x05, 0x02, 0x01])
+# Trigger the switching action assigned to the participant's TKS-Communicator function key 1
+# (decoded from a TKS Communicator capture; verified with a Gira switch actuator 1289 00).
+FUNCTION_KEY_SWITCHING = bytes([0x04, 0x02, 0x06, 0x01, 0x01])
+# Query the TKS Communicator sends before a switching action; lists the participant's switching action.
+SWITCH_LIST_QUERY = bytes([0x03, 0x01, 0x05, 0x00, 0x01])
 
 
 def message_key(password: str) -> bytes:

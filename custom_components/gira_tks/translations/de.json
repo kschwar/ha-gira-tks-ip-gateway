@@ -68,6 +68,9 @@
       },
       "light": {
         "name": "Licht"
+      },
+      "switching_action": {
+        "name": "Schalthandlung"
       }
     },
     "camera": {
