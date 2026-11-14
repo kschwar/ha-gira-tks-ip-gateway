@@ -38,7 +38,8 @@
     },
     "error": {
       "sip_credentials_required": "Für SIP werden Benutzername und Passwort benötigt.",
-      "invalid_local_ip": "Bitte eine gültige IPv4-Adresse dieses Home-Assistant-Systems eingeben."
+      "invalid_local_ip": "Bitte eine gültige IPv4-Adresse dieses Home-Assistant-Systems eingeben.",
+      "invalid_sip_username": "Der SIP-Benutzername darf nur Latin-1-Zeichen enthalten (Buchstaben, Ziffern, Umlaute)."
     }
   },
   "entity": {

@@ -38,7 +38,8 @@
     },
     "error": {
       "sip_credentials_required": "SIP requires a user name and password.",
-      "invalid_local_ip": "Please enter a valid IPv4 address of this Home Assistant system."
+      "invalid_local_ip": "Please enter a valid IPv4 address of this Home Assistant system.",
+      "invalid_sip_username": "The SIP user name may only contain Latin-1 characters (letters, digits, umlauts)."
     }
   },
   "entity": {
