@@ -19,9 +19,11 @@ eigene Verantwortung.
   Türstation während eines Rufs, Buttons zum Annehmen und Ablehnen.
 - **Kameravorschau ohne Klingeln**: die Kamera der Türstation bei Bedarf
   einschalten, wie mit der Kamerataste des TKS-Communicators.
-- **Türöffner und Licht** (optional): beides aus Home Assistant auslösen, über
-  den verschlüsselten SIP-Steuerkanal des Gateways. Der Button meldet nur dann
-  Erfolg, wenn das Gateway den Befehl quittiert hat.
+- **Türöffner, Licht und Schalthandlung** (optional): aus Home Assistant
+  auslösen, über den verschlüsselten SIP-Steuerkanal des Gateways. Die
+  Schalthandlung ist die, die auf Funktionstaste 1 des SIP-Teilnehmers liegt,
+  z. B. ein Schaltaktor für ein Garagentor. Der Button meldet nur dann Erfolg,
+  wenn das Gateway den Befehl quittiert hat.
 
 Audio und Gegensprechen werden nicht unterstützt. Rufe ohne Video werden als
 Klingeln gemeldet, können in Home Assistant aber nicht angenommen werden.
@@ -71,7 +73,7 @@ Dienste → Integration hinzufügen → Gira TKS-IP Gateway**) und die IPv4-Adre
 des Gateways, den Port sowie denselben Benutzernamen und dasselbe Passwort
 eingeben.
 
-### 2. Optional: SIP, Video, Türöffner und Licht
+### 2. Optional: SIP, Video und Schaltbuttons
 
 Den Dialog **Konfigurieren** der Integration öffnen:
 
@@ -82,7 +84,7 @@ Den Dialog **Konfigurieren** der Integration öffnen:
 | Lokale IP-Adresse | Adresse, die dem Gateway mitgeteilt wird. Leer lassen für automatische Erkennung. |
 | Lokaler SIP-Port / H.264-RTP-Port | Lokale UDP-Ports, Standard 5062 und 8282. Das Gateway muss sie erreichen können. |
 | Gespräch automatisch annehmen | Videorufe automatisch annehmen (standardmäßig aus). |
-| Schaltbuttons Türöffner und Licht anzeigen | Fügt die Buttons **Türöffner** und **Licht** hinzu (standardmäßig aus). |
+| Schaltbuttons anzeigen | Fügt die Buttons **Türöffner**, **Licht** und **Schalthandlung** hinzu (standardmäßig aus). |
 
 Hinweise:
 
@@ -94,6 +96,12 @@ Hinweise:
 - **Türöffner und Licht** funktionieren nur mit einem SIP-Konto, dem das
   Gateway das Schalten erlaubt. Antwortet das Gateway nicht oder passt das
   SIP-Passwort nicht, zeigt der Button eine Fehlermeldung mit dem Grund an.
+- **Schalthandlung** löst die Schalthandlung aus, die im Gira TKS-Assistenten
+  auf **Funktionstaste 1** dieses TKS-Communicator-Teilnehmers liegt (unter
+  **Funktionstaste**; die Auswahl nur unter „Schalthandlungen“ reicht nicht).
+  Ohne diese Zuordnung lehnt das Gateway den Befehl ab. Welche Geräte
+  reagieren, z. B. ein oder mehrere Schaltaktoren, legt der Assistent fest.
+  Weitere Funktionstasten werden noch nicht unterstützt.
 - Speichern der Optionen lädt die Integration neu.
 
 ## Entitäten
@@ -117,7 +125,7 @@ Entität.
 | Anruf annehmen, Anruf ablehnen / beenden | Button | Rufsteuerung. |
 | Kameravorschau starten / beenden | Button | Kameravorschau (endet nach 30 s von selbst). |
 | SIP-Verbindung neu starten | Button | SIP-Teilnehmer neu anmelden. |
-| Türöffner, Licht | Button | Nur mit eingeschalteter Option für die Schaltbuttons. |
+| Türöffner, Licht, Schalthandlung | Button | Nur mit eingeschalteter Option für die Schaltbuttons. |
 
 ## Ereignisse (Event-Bus)
 
@@ -176,7 +184,7 @@ actions:
 - Die Gateway-Protokolle laufen unverschlüsselt per UDP/TCP im lokalen Netz.
   Eingehende SIP-Nachrichten werden nur von der IP-Adresse des Gateways
   angenommen; wer diese Adresse im LAN fälschen kann, könnte aber ein Klingeln
-  vortäuschen. Schaltbefehle (Türöffner, Licht) sind verschlüsselt und ohne
+  vortäuschen. Schaltbefehle (Türöffner, Licht, Schalthandlung) sind verschlüsselt und ohne
   das SIP-Passwort nicht fälschbar.
 - HomeServer- und SIP-Passwort liegen im Konfigurationseintrag von Home
   Assistant und werden nie ins Log geschrieben.

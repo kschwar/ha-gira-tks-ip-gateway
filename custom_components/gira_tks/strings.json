@@ -32,7 +32,7 @@
           "sip_port": "Local SIP port",
           "media_port": "Local H.264 RTP port",
           "auto_answer": "Answer calls automatically",
-          "tks_door_opener_enabled": "Show door opener and light buttons (encrypted SIP channel; the SIP account must be allowed to switch by the gateway)"
+          "tks_door_opener_enabled": "Show switching buttons: door opener, light, switching action of function key 1 (encrypted SIP channel; the SIP account must be allowed to switch by the gateway)"
         }
       }
     },

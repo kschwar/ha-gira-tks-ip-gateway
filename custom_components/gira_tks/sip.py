@@ -36,6 +36,7 @@ PREVIEW_AUTO_RESTART_BLOCK = 60
 TKS_STEP_TIMEOUT = 8.0
 TKS_RESEND_AFTER = 2.0
 TKS_REJECTED_BODY = "0402"
+TKS_QUERY_CLOSED_BODY = "0401"
 SIP_BIND_RETRIES = 10
 SIP_BIND_RETRY_DELAY = 0.3
 REGISTER_RETRY_DELAY = 30.0
@@ -844,8 +845,15 @@ class SipClient(asyncio.DatagramProtocol):
         async with self._tks_lock:
             listing = await self._tks_message_exchange(tks_crypto.SWITCH_LIST_QUERY, query=True)
             _LOGGER.debug("Gira TKS switching action list for this participant: %s",
-                          bytes(listing).rstrip(b"\0")[:64].hex(" ") if isinstance(listing, (bytes, bytearray)) else listing)
-            await self._tks_message_exchange(tks_crypto.FUNCTION_KEY_SWITCHING)
+                          listing.rstrip(b"\0")[:64].hex(" "))
+            try:
+                await self._tks_message_exchange(tks_crypto.FUNCTION_KEY_SWITCHING)
+            except tks_crypto.CommandRejected as err:
+                raise tks_crypto.CommandRejected(
+                    "Gateway rejected the switching action (01 02 00): no switching action is "
+                    "assigned to function key 1 of this TKS-Communicator participant in the "
+                    "Gira TKS Assistant"
+                ) from err
         _LOGGER.info("Gira TKS switching action command acknowledged by the gateway")
 
     async def _send_tks_command(self, command: bytes, label: str) -> None:
@@ -928,6 +936,10 @@ class SipClient(asyncio.DatagramProtocol):
                 if not handshake[slot].done():
                     handshake[slot].set_result(error)
             return
+        if (body.upper() == TKS_QUERY_CLOSED_BODY and handshake.get("query") and handshake["k2"]
+                and not handshake["ack03"].done()):
+            handshake["ack03"].set_result(b"")
+            return
         if len(body) != 2 + 2 * tks_crypto.BLOCK_BYTES:
             _LOGGER.debug("Gira TKS MESSAGE during handshake with unexpected body: length %d, "
                           "head %r, tail %r", len(body), body[:6], body[-6:])
@@ -944,6 +956,11 @@ class SipClient(asyncio.DatagramProtocol):
                 else:
                     try:
                         tks_crypto.check_ack(body, handshake["k2"])
+                    except tks_crypto.CommandRejected as err:
+                        handshake["last_error"] = str(err)
+                        _LOGGER.warning("%s", err)
+                        handshake["ack03"].set_result(err)
+                        return
                     except tks_crypto.HandshakeError:
                         plain = tks_crypto.decrypt_block(tks_crypto.decode_body(body, 0x03), handshake["k2"])
                         _LOGGER.debug("Gira TKS 03 reply plaintext: %s", plain.rstrip(b"\0")[:48].hex(" "))

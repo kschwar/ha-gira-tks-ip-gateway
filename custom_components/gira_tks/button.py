@@ -169,7 +169,7 @@ class SipLightButton(_SipSwitchButton):
 
 class SipSwitchingActionButton(_SipSwitchButton):
     _attr_translation_key = "switching_action"
-    _attr_icon = "mdi:garage-variant"
+    _attr_icon = "mdi:gesture-tap-button"
 
     def __init__(self, entry, sip):
         super().__init__(entry, sip, "sip_switching_action")

@@ -32,7 +32,7 @@
           "sip_port": "Lokaler SIP-Port",
           "media_port": "Lokaler H.264-RTP-Port",
           "auto_answer": "Gespräch automatisch annehmen",
-          "tks_door_opener_enabled": "Schaltbuttons Türöffner und Licht anzeigen (verschlüsselter SIP-Kanal; das SIP-Konto muss vom Gateway zum Schalten berechtigt sein)"
+          "tks_door_opener_enabled": "Schaltbuttons anzeigen: Türöffner, Licht, Schalthandlung der Funktionstaste 1 (verschlüsselter SIP-Kanal; das SIP-Konto muss vom Gateway zum Schalten berechtigt sein)"
         }
       }
     },

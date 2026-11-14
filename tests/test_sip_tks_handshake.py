@@ -68,7 +68,7 @@ class FakeGateway:
 
     def __init__(self, client, *, password=PASSWORD, reject_code=None, send_ack=True,
                  ack_prefix=tks.ACK_PREFIX, foreign_02_first=False, drop_first=(),
-                 unpadded_reply=False, reject_body=None):
+                 unpadded_reply=False, reject_body=None, replies=None):
         self.client = client
         self.password = password
         self.reject_code = reject_code
@@ -77,6 +77,8 @@ class FakeGateway:
         self.foreign_02_first = foreign_02_first
         self.unpadded_reply = unpadded_reply
         self.reject_body = reject_body
+        self.replies = replies or {}
+        self.commands = []
         self.k2 = None
         self.sent_types = []
         self.command_plain = None
@@ -125,7 +127,13 @@ class FakeGateway:
             self._message(tks.encode_body(0x02, tks.encrypt_block(reply, k1)))
         elif kind == "03":
             self.command_plain = tks.decrypt_block(bytes.fromhex(body[2:]), self.k2)
-            if self.send_ack:
+            self.commands.append(self.command_plain.rstrip(b"\0"))
+            planned = self.replies.get(self.command_plain.rstrip(b"\0"))
+            if planned is not None:
+                for plain in planned:
+                    self._message(tks.encode_body(0x03, tks.encrypt_block(plain.ljust(256, b"\0"), self.k2)))
+                self._message("0401")
+            elif self.send_ack:
                 ack = self.ack_prefix.ljust(256, b"\0")
                 self._message(tks.encode_body(0x03, tks.encrypt_block(ack, self.k2)))
 
@@ -232,6 +240,67 @@ class TestDoorOpenerHandshake(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(RuntimeError):
             await client.send_tks_door_opener()
         self.assertEqual(gw.sent_types, [])
+
+
+class TestSwitchingAction(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        patcher = mock.patch.object(sip, "TKS_STEP_TIMEOUT", 0.5)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    QUERY_REPLY = [bytes([0x02, 0x04, 0x01, 0x00, 0x01])]
+    ACK = [tks.ACK_PREFIX]
+    REJECT = [tks.REJECT_PREFIX]
+
+    async def test_queries_then_triggers_function_key_1(self):
+        client, gw = make_client(replies={
+            tks.SWITCH_LIST_QUERY: self.QUERY_REPLY, tks.FUNCTION_KEY_SWITCHING: self.ACK})
+        await client.send_tks_switching_action()
+        self.assertEqual(gw.commands, [tks.SWITCH_LIST_QUERY, tks.FUNCTION_KEY_SWITCHING])
+        self.assertEqual(gw.sent_types, ["01", "03", "04", "01", "03", "04"])
+        self.assertIsNone(client._tks_handshake)
+
+    async def test_query_with_several_records_uses_the_first(self):
+        records = [bytes([0x02, 0x02, 0x01, 0x00, n]) for n in (1, 2, 3)]
+        client, gw = make_client(replies={tks.SWITCH_LIST_QUERY: records})
+        async with client._tks_lock:
+            listing = await client._tks_message_exchange(tks.SWITCH_LIST_QUERY, query=True)
+        self.assertTrue(listing.startswith(records[0]))
+
+    async def test_query_without_records_returns_empty_without_waiting(self):
+        client, gw = make_client(replies={tks.SWITCH_LIST_QUERY: []})
+        async with client._tks_lock:
+            with mock.patch.object(sip, "TKS_STEP_TIMEOUT", 10.0):
+                listing = await client._tks_message_exchange(tks.SWITCH_LIST_QUERY, query=True)
+        self.assertEqual(listing, b"")
+
+    async def test_unassigned_function_key_fails_fast_with_hint(self):
+        client, gw = make_client(replies={
+            tks.SWITCH_LIST_QUERY: self.QUERY_REPLY, tks.FUNCTION_KEY_SWITCHING: self.REJECT})
+        loop = asyncio.get_running_loop()
+        started = loop.time()
+        with mock.patch.object(sip, "TKS_STEP_TIMEOUT", 10.0):
+            with self.assertRaisesRegex(tks.CommandRejected, "function key 1"):
+                await client.send_tks_switching_action()
+        self.assertLess(loop.time() - started, 5.0)
+        self.assertEqual(gw.sent_types, ["01", "03", "04", "01", "03", "04"])
+        self.assertIsNone(client._tks_handshake)
+
+    async def test_rejected_door_opener_reports_rejection(self):
+        client, gw = make_client(replies={tks.DOOR_OPENER: self.REJECT})
+        with self.assertRaisesRegex(tks.CommandRejected, "01 02 00"):
+            await client.send_tks_door_opener()
+        self.assertEqual(gw.sent_types, ["01", "03", "04"])
+
+    def test_check_ack_distinguishes_rejection_from_garbage(self):
+        k2 = bytes(range(16))
+        reject = tks.encode_body(0x03, tks.encrypt_block(tks.REJECT_PREFIX.ljust(256, b"\0"), k2))
+        garbage = tks.encode_body(0x03, tks.encrypt_block(bytes([9, 9, 9]).ljust(256, b"\0"), k2))
+        with self.assertRaises(tks.CommandRejected):
+            tks.check_ack(reject, k2)
+        with self.assertRaises(tks.HandshakeError) as ctx:
+            tks.check_ack(garbage, k2)
+        self.assertNotIsInstance(ctx.exception, tks.CommandRejected)
 
 
 class TestTksResend(unittest.IsolatedAsyncioTestCase):

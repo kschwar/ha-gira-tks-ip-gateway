@@ -53,9 +53,14 @@ def encode_body(type_byte: int, block256: bytes) -> str:
 
 
 ACK_PREFIX = bytes([0x01, 0x02, 0x01])
+REJECT_PREFIX = bytes([0x01, 0x02, 0x00])
 
 
 class HandshakeError(Exception):
+    pass
+
+
+class CommandRejected(HandshakeError):
     pass
 
 
@@ -90,6 +95,8 @@ def stage3_key_from_reply(body: str, k1: bytes) -> bytes:
 
 def check_ack(body: str, k2: bytes) -> None:
     plain = decrypt_block(decode_body(body, 0x03), k2)
+    if plain.startswith(REJECT_PREFIX):
+        raise CommandRejected("Gateway rejected the command (01 02 00)")
     if not plain.startswith(ACK_PREFIX):
         raise HandshakeError(
             f"Unexpected 03 acknowledgement from the gateway (starts with {plain[:3].hex(' ')}; "

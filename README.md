@@ -17,8 +17,10 @@ Not affiliated with or endorsed by Gira. Use at your own risk.
   station during a call, answer and decline buttons.
 - **Camera preview without a ring**: switch the door station camera on on
   demand, like the camera key of the TKS-Communicator.
-- **Door opener and light** (optional): trigger both from Home Assistant over
-  the gateway's encrypted SIP control channel. The button only reports success
+- **Door opener, light and switching action** (optional): trigger them from
+  Home Assistant over the gateway's encrypted SIP control channel. The switching
+  action is the one assigned to function key 1 of the SIP participant, for
+  example a switch actuator for a garage door. The button only reports success
   when the gateway acknowledges the command.
 
 Audio and two-way talk are not supported. Calls without video are reported as
@@ -67,7 +69,7 @@ Then add the integration in Home Assistant (**Settings → Devices & services �
 Add integration → Gira TKS-IP Gateway**) and enter the gateway's IPv4 address,
 the port and the same user name and password.
 
-### 2. Optional: SIP, video, door opener and light
+### 2. Optional: SIP, video and switching buttons
 
 Open the integration's **Configure** dialog:
 
@@ -78,7 +80,7 @@ Open the integration's **Configure** dialog:
 | Local IP address | Address announced to the gateway. Leave empty for automatic detection. |
 | Local SIP port / H.264 RTP port | Local UDP ports, default 5062 and 8282. The gateway must be able to reach them. |
 | Answer calls automatically | Answer video calls automatically (off by default). |
-| Show door opener and light buttons | Adds the **Door opener** and **Light** buttons (off by default). |
+| Show switching buttons | Adds the **Door opener**, **Light** and **Switching action** buttons (off by default). |
 
 Notes:
 
@@ -90,6 +92,12 @@ Notes:
 - **Door opener and light** only work with a SIP account the gateway allows to
   switch. If the gateway does not answer or the SIP password is wrong, the
   button shows an error with the reason.
+- **Switching action** triggers the switching action assigned to **function
+  key 1** of this TKS-Communicator participant in the Gira TKS Assistant
+  (**Function key**; selecting it under switching actions alone is not
+  enough). Without that assignment the gateway rejects the command. Which
+  devices react, for example one or more switch actuators, is set in the
+  Assistant. Further function keys are not supported yet.
 - Saving the options reloads the integration.
 
 ## Entities
@@ -112,7 +120,7 @@ shown in each entity's settings.
 | Answer call, Decline / end call | button | Call control. |
 | Start / stop camera preview | button | Camera preview (stops by itself after 30 s). |
 | Restart SIP connection | button | Re-register the SIP participant. |
-| Door opener, Light | button | Only with the switching buttons option enabled. |
+| Door opener, Light, Switching action | button | Only with the switching buttons option enabled. |
 
 ## Events (event bus)
 
@@ -172,7 +180,7 @@ actions:
 - The gateway protocols are plain UDP/TCP on the local network. Incoming SIP
   messages are only accepted from the gateway's IP address, but anyone on the
   LAN who can spoof that address could fake a ring. Switching commands (door
-  opener, light) are encrypted and cannot be forged without the SIP password.
+  opener, light, switching action) are encrypted and cannot be forged without the SIP password.
 - The HomeServer and SIP passwords are stored in Home Assistant's config entry
   and are never logged.
 - The video stream URL used internally by Home Assistant contains a random
