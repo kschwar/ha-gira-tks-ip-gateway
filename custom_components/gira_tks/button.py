@@ -33,7 +33,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             RestartSipButton(entry, sip),
         ]
         if runtime.get("sip_switching"):
-            entities += [SipDoorOpenerButton(entry, sip), SipLightButton(entry, sip)]
+            entities += [SipDoorOpenerButton(entry, sip), SipLightButton(entry, sip), SipSwitchingActionButton(entry, sip)]
     async_add_entities(entities)
 
 
@@ -165,3 +165,14 @@ class SipLightButton(_SipSwitchButton):
 
     async def _send(self) -> None:
         await self.sip.send_tks_light()
+
+
+class SipSwitchingActionButton(_SipSwitchButton):
+    _attr_translation_key = "switching_action"
+    _attr_icon = "mdi:garage-variant"
+
+    def __init__(self, entry, sip):
+        super().__init__(entry, sip, "sip_switching_action")
+
+    async def _send(self) -> None:
+        await self.sip.send_tks_switching_action()
