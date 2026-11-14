@@ -543,9 +543,9 @@ class SipClient(asyncio.DatagramProtocol):
                         and msg.header("call-id") == self._call_id):
                     self._last_response = msg
                     return msg.start_line
-                await self._handle(msg, addr)
+                await self._dispatch(msg, addr)
             elif msg:
-                await self._handle(msg, addr)
+                await self._dispatch(msg, addr)
         raise TimeoutError("No SIP REGISTER response")
 
     async def start(self) -> None:
@@ -590,14 +590,7 @@ class SipClient(asyncio.DatagramProtocol):
                 self._registered = False
                 self.runtime.status = "error"
                 self._changed()
-            retry_at = time.monotonic() + REGISTER_RETRY_DELAY
-            while time.monotonic() < retry_at:
-                try:
-                    await self._process_queue_until(retry_at)
-                except asyncio.CancelledError:
-                    raise
-                except Exception as err:
-                    _LOGGER.debug("SIP datagram handling failed (%s)", type(err).__name__)
+            await self._process_queue_until(time.monotonic() + REGISTER_RETRY_DELAY)
 
     async def _process_queue_until(self, deadline: float) -> None:
         while (remaining := deadline - time.monotonic()) > 0:
@@ -607,7 +600,15 @@ class SipClient(asyncio.DatagramProtocol):
                 return
             msg = parse_sip(raw)
             if msg:
-                await self._handle(msg, addr)
+                await self._dispatch(msg, addr)
+
+    async def _dispatch(self, msg: SipMessage, addr: tuple[str, int]) -> None:
+        try:
+            await self._handle(msg, addr)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            _LOGGER.exception("Error while handling a SIP message from the Gira TKS gateway")
 
     async def _handle(self, msg: SipMessage, addr: tuple[str, int]) -> None:
         if msg.start_line.startswith("SIP/2.0"):

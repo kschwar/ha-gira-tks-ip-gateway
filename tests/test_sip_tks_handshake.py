@@ -378,14 +378,18 @@ class TestAnsweredMediaWatchdog(unittest.IsolatedAsyncioTestCase):
 
 
 def _video_invite(call_id="call2@gw"):
-    sdp = ("v=0\r\no=- 1 1 IN IP4 192.0.2.10\r\ns=-\r\nc=IN IP4 192.0.2.10\r\nt=0 0\r\n"
+    return sip.parse_sip(_video_invite_raw(call_id))
+
+
+def _video_invite_raw(call_id="call2@gw"):
+    sdp =("v=0\r\no=- 1 1 IN IP4 192.0.2.10\r\ns=-\r\nc=IN IP4 192.0.2.10\r\nt=0 0\r\n"
            "m=video 9000 RTP/AVP 96\r\na=rtpmap:96 H264/90000\r\n")
     raw = (f"INVITE sip:user@198.51.100.2:5070 SIP/2.0\r\n"
            f"Via: SIP/2.0/UDP {GW}:5060;branch=z9hG4bKinv2\r\n"
            f"From: <sip:gw@{GW}>;tag=gwtag\r\nTo: <sip:user@198.51.100.2>\r\n"
            f"Call-ID: {call_id}\r\nCSeq: 1 INVITE\r\nContact: <sip:gw@{GW}:5060>\r\n"
            f"Content-Type: application/sdp\r\nContent-Length: {len(sdp)}\r\n\r\n{sdp}")
-    return sip.parse_sip(raw.encode("latin-1"))
+    return raw.encode("latin-1")
 
 
 def _free_udp_port():
@@ -400,6 +404,7 @@ def _free_udp_port():
 class TestMediaRebind(unittest.IsolatedAsyncioTestCase):
     async def test_call_during_preview_gets_the_rtp_port(self):
         client, gw = make_client()
+        client.hass.async_create_background_task.side_effect = lambda coro, name: coro.close()
         client.local_ip, client.media_port = "127.0.0.1", _free_udp_port()
         loop = asyncio.get_running_loop()
         client.media_transport, client.media_protocol = await loop.create_datagram_endpoint(
@@ -417,6 +422,22 @@ class TestMediaRebind(unittest.IsolatedAsyncioTestCase):
         finally:
             client._end_call("idle")
             await asyncio.sleep(0)
+
+
+class TestMessageErrors(unittest.IsolatedAsyncioTestCase):
+    async def test_failing_message_does_not_stop_processing_or_registration(self):
+        client, gw = make_client()
+        options = (f"OPTIONS sip:user@198.51.100.2:5070 SIP/2.0\r\n"
+                   f"Via: SIP/2.0/UDP {GW}:5060;branch=z9hG4bKopt\r\n"
+                   f"From: <sip:gw@{GW}>;tag=gw\r\nTo: <sip:user@198.51.100.2>\r\n"
+                   f"Call-ID: opt@gw\r\nCSeq: 1 OPTIONS\r\nContent-Length: 0\r\n\r\n")
+        client.queue.put_nowait((_video_invite_raw(), (GW, 5060)))
+        client.queue.put_nowait((options.encode("latin-1"), (GW, 5060)))
+        with mock.patch.object(client, "_invite", side_effect=RuntimeError("boom")):
+            with self.assertLogs(sip._LOGGER, "ERROR"):
+                await client._process_queue_until(sip.time.monotonic() + 0.3)
+        self.assertEqual(client.runtime.status, "registered")
+        self.assertEqual(gw.ok_replies, 1)
 
 
 class TestStreamResync(unittest.IsolatedAsyncioTestCase):
