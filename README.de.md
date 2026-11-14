@@ -73,6 +73,16 @@ Dienste → Integration hinzufügen → Gira TKS-IP Gateway**) und die IPv4-Adre
 des Gateways, den Port sowie denselben Benutzernamen und dasselbe Passwort
 eingeben.
 
+**Automatische Erkennung:** Home Assistant erkennt das Gateway im Netzwerk an
+seiner Gira-MAC-Adresse und zeigt es unter **Einstellungen → Geräte & Dienste →
+Entdeckt** an. Die Integration bestätigt es mit der Suchanfrage des Gira
+TKS-IP-Gateway-Finders (UDP-Broadcast an Port 31337, nur lesend) und trägt die
+IP-Adresse ein. Beim manuellen Hinzufügen sucht die Integration ebenfalls und
+schlägt das gefundene Gateway vor. Gefunden werden nur Gateways im selben
+Netzwerksegment; Benutzername und Passwort werden immer von Hand eingegeben.
+Bekommt das Gateway per DHCP eine neue IP-Adresse, passt die Erkennung den
+eingerichteten Eintrag an.
+
 ### 2. Optional: SIP, Video und Schaltbuttons
 
 Den Dialog **Konfigurieren** der Integration öffnen:
@@ -168,6 +178,7 @@ actions:
 | Gateway → Home Assistant | TCP 50050 | Türrufe und Tastenereignisse |
 | Home Assistant ↔ Gateway | UDP 5060 (Gateway) / 5062 (HA) | SIP |
 | Gateway → Home Assistant | UDP 8282 | H.264-Video (RTP) |
+| Home Assistant ↔ Gateway | UDP 31337 | Gateway-Suche (Broadcast, nur bei Erkennung und Einrichtung) |
 
 ## Grenzen
 

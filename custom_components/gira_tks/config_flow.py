@@ -8,6 +8,7 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.core import callback
+from homeassistant.helpers.device_registry import format_mac
 from homeassistant.helpers.selector import (
     TextSelector,
     TextSelectorConfig,
@@ -32,7 +33,9 @@ from .const import (
     DEFAULT_LOCAL_IP,
     DEFAULT_SIP_PORT,
     DOMAIN,
+    CONF_MAC,
 )
+from .discovery import DiscoveredGateway, async_discover_gateways
 
 _PASSWORD_SELECTOR = TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD))
 
@@ -49,6 +52,40 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     VERSION = 1
 
+    def __init__(self) -> None:
+        self._found: list[DiscoveredGateway] | None = None
+        self._suggested: DiscoveredGateway | None = None
+
+    async def async_step_dhcp(self, discovery_info: Any) -> ConfigFlowResult:
+        mac = format_mac(discovery_info.macaddress)
+        entries = self._async_current_entries(include_ignore=False)
+        if any(entry.data.get(CONF_MAC) == mac and entry.data.get(CONF_GATEWAY_HOST) == discovery_info.ip
+               for entry in entries):
+            return self.async_abort(reason="already_configured")
+        gateways = await async_discover_gateways(stop_when=lambda g: g.mac == mac)
+        gateway = next((g for g in gateways if g.mac == mac and g.host == discovery_info.ip), None)
+        if gateway is None:
+            return self.async_abort(reason="not_tks_gateway")
+        for entry in entries:
+            known_mac = entry.data.get(CONF_MAC)
+            if known_mac != gateway.mac and (known_mac or entry.data.get(CONF_GATEWAY_HOST) != gateway.host):
+                continue
+            if entry.data.get(CONF_GATEWAY_HOST) != gateway.host:
+                port = int(entry.data.get(CONF_LISTEN_PORT, DEFAULT_LISTEN_PORT))
+                self.hass.config_entries.async_update_entry(
+                    entry, data={**entry.data, CONF_GATEWAY_HOST: gateway.host},
+                    unique_id=f"{gateway.host}:{port}",
+                )
+                self.hass.config_entries.async_schedule_reload(entry.entry_id)
+            elif not known_mac:
+                self.hass.config_entries.async_update_entry(entry, data={**entry.data, CONF_MAC: gateway.mac})
+            return self.async_abort(reason="already_configured")
+        await self.async_set_unique_id(f"{gateway.host}:{DEFAULT_LISTEN_PORT}")
+        self._abort_if_unique_id_configured()
+        self._suggested = gateway
+        self.context["title_placeholders"] = {"name": gateway.name or "TKS-IP-Gateway", "host": gateway.host}
+        return await self.async_step_user()
+
     async def async_step_user(
         self, user_input: dict[str, str | int] | None = None
     ) -> ConfigFlowResult:
@@ -64,14 +101,21 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 unique_id = f"{host}:{port}"
                 await self.async_set_unique_id(unique_id)
                 self._abort_if_unique_id_configured()
-                return self.async_create_entry(
-                    title=f"Gira TKS ({host})",
-                    data={**user_input, CONF_GATEWAY_HOST: host},
-                )
+                data = {**user_input, CONF_GATEWAY_HOST: host}
+                mac = self._mac_for(host)
+                if mac:
+                    data[CONF_MAC] = mac
+                return self.async_create_entry(title=f"Gira TKS ({host})", data=data)
+        elif self._suggested is None:
+            if self._found is None:
+                self._found = await async_discover_gateways()
+            configured = {entry.data.get(CONF_GATEWAY_HOST) for entry in self._async_current_entries()}
+            self._suggested = next((g for g in self._found if g.host not in configured), None)
 
+        host_default = {"default": self._suggested.host} if self._suggested else {}
         schema = vol.Schema(
             {
-                vol.Required(CONF_GATEWAY_HOST): str,
+                vol.Required(CONF_GATEWAY_HOST, **host_default): str,
                 vol.Required(CONF_LISTEN_PORT, default=DEFAULT_LISTEN_PORT): vol.All(
                     int, vol.Range(min=1, max=65535)
                 ),
@@ -82,6 +126,10 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return self.async_show_form(
             step_id="user", data_schema=schema, errors=errors
         )
+
+    def _mac_for(self, host: str) -> str | None:
+        candidates = [self._suggested, *(self._found or [])]
+        return next((g.mac for g in candidates if g is not None and g.host == host), None)
 
     @staticmethod
     @callback

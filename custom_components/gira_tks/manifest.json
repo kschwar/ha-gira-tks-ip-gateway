@@ -15,9 +15,14 @@
     "http",
     "persistent_notification"
   ],
+  "dhcp": [
+    {
+      "macaddress": "000AB3*"
+    }
+  ],
   "documentation": "https://github.com/kschwar/ha-gira-tks-ip-gateway",
   "iot_class": "local_push",
   "issue_tracker": "https://github.com/kschwar/ha-gira-tks-ip-gateway/issues",
   "requirements": [],
-  "version": "1.0.4"
+  "version": "1.1.0"
 }

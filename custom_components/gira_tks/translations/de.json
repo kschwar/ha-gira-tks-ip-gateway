@@ -1,5 +1,6 @@
 {
   "config": {
+    "flow_title": "{name} ({host})",
     "step": {
       "user": {
         "title": "Gira TKS-IP Gateway",
@@ -16,7 +17,9 @@
       "invalid_gateway_host": "Bitte die IPv4-Adresse des Gateways eingeben (kein Hostname)."
     },
     "abort": {
-      "already_configured": "Dieses Gateway ist bereits eingerichtet."
+      "already_configured": "Dieses Gateway ist bereits eingerichtet.",
+      "already_in_progress": "Die Einrichtung dieses Gateways läuft bereits.",
+      "not_tks_gateway": "Das gefundene Gira-Gerät hat nicht als TKS-IP-Gateway geantwortet."
     }
   },
   "options": {

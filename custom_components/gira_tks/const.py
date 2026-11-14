@@ -1,11 +1,12 @@
 DOMAIN = "gira_tks"
-VERSION = "1.0.4"
+VERSION = "1.1.0"
 PLATFORMS = ["sensor", "binary_sensor", "camera", "button", "event"]
 
 CONF_GATEWAY_HOST = "gateway_host"
 CONF_LISTEN_PORT = "listen_port"
 CONF_USERNAME = "username"
 CONF_PASSWORD = "password"
+CONF_MAC = "mac"
 
 DEFAULT_LISTEN_PORT = 50050
 CONF_SIP_ENABLED = "sip_enabled"
