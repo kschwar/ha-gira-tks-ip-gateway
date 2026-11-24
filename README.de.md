@@ -199,8 +199,10 @@ actions:
   das SIP-Passwort nicht fälschbar.
 - HomeServer- und SIP-Passwort liegen im Konfigurationseintrag von Home
   Assistant und werden nie ins Log geschrieben.
-- Die intern genutzte Video-Stream-Adresse enthält ein zufälliges Token, das
-  sich bei jedem Neustart ändert.
+- Die Video-Endpunkte erfordern Home-Assistant-Authentifizierung. Interne
+  Stream-URLs werden von Home Assistant signiert und erlauben fünf Minuten
+  lang neue Verbindungen. Signierte URLs in Logs bis zum Ablauf vertraulich
+  behandeln.
 
 ## Lizenz
 

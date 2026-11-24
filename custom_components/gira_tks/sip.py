@@ -227,11 +227,9 @@ class SipPreviewDialog:
     invite_pending: bool = True
 
 
-def _stream_manager(request: web.Request, entry_id: str, token: str) -> SipClient:
+def _stream_manager(request: web.Request, entry_id: str) -> SipClient:
     manager: SipClient | None = request.app[KEY_HASS].data.get(DOMAIN, {}).get(entry_id, {}).get("sip")
-    if manager is None or not secrets.compare_digest(
-        manager.stream_token.encode("utf-8"), token.encode("utf-8", errors="replace")
-    ):
+    if manager is None:
         raise web.HTTPNotFound()
     return manager
 
@@ -245,12 +243,12 @@ def _reject_inactive(manager: SipClient) -> None:
 
 class LiveTsView(HomeAssistantView):
 
-    requires_auth = False
+    requires_auth = True
     name = "api:gira_tks:live_ts"
-    url = "/api/gira_tks/{entry_id}/{token}/live.ts"
+    url = "/api/gira_tks/{entry_id}/live.ts"
 
-    async def get(self, request: web.Request, entry_id: str, token: str) -> web.StreamResponse:
-        manager = _stream_manager(request, entry_id, token)
+    async def get(self, request: web.Request, entry_id: str) -> web.StreamResponse:
+        manager = _stream_manager(request, entry_id)
         if not manager.media_active:
             _reject_inactive(manager)
         return await _serve_ts(manager, request)
@@ -258,12 +256,12 @@ class LiveTsView(HomeAssistantView):
 
 class PreviewTsView(HomeAssistantView):
 
-    requires_auth = False
+    requires_auth = True
     name = "api:gira_tks:preview_ts"
-    url = "/api/gira_tks/{entry_id}/{token}/preview.ts"
+    url = "/api/gira_tks/{entry_id}/preview.ts"
 
-    async def get(self, request: web.Request, entry_id: str, token: str) -> web.StreamResponse:
-        manager = _stream_manager(request, entry_id, token)
+    async def get(self, request: web.Request, entry_id: str) -> web.StreamResponse:
+        manager = _stream_manager(request, entry_id)
         if not await manager.ensure_preview_for_viewer():
             _reject_inactive(manager)
         return await _serve_ts(manager, request)
@@ -333,7 +331,6 @@ class SipClient(asyncio.DatagramProtocol):
         self._response_waiters: dict[tuple[int, str], asyncio.Future[SipMessage]] = {}
         self._preview_task: asyncio.Task | None = None
         self._preview_lock = asyncio.Lock()
-        self.stream_token = secrets.token_urlsafe(24)
         self.ts_channel = tks_video.StreamChannel(STREAM_QUEUE_SIZE)
         self._ts_muxer = tks_video.MpegTsMuxer()
         self._frame_clock = tks_video.FrameClock()

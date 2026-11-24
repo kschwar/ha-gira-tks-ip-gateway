@@ -193,8 +193,9 @@ actions:
   opener, light, switching action) are encrypted and cannot be forged without the SIP password.
 - The HomeServer and SIP passwords are stored in Home Assistant's config entry
   and are never logged.
-- The video stream URL used internally by Home Assistant contains a random
-  token that changes on every restart.
+- Video endpoints require Home Assistant authentication. Internal stream URLs
+  are signed by Home Assistant and allow new connections for five minutes.
+  Treat signed URLs in logs as sensitive until they expire.
 
 ## License
 

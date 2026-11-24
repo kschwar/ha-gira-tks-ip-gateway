@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta
+
 from homeassistant.components.camera import Camera, CameraEntityFeature
+from homeassistant.components.http.auth import async_sign_path
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.network import NoURLAvailableError, get_url
 
 from .const import DOMAIN, sip_updated_signal
@@ -24,6 +28,7 @@ class _SipCamera(Camera):
     _attr_has_entity_name = True
     _attr_supported_features = CameraEntityFeature.STREAM
     content_type = "image/jpeg"
+    _stream_filename: str
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry, sip: SipClient, suffix: str) -> None:
         super().__init__()
@@ -46,10 +51,23 @@ class _SipCamera(Camera):
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
         self.async_on_remove(
+            async_track_time_interval(self.hass, self._refresh_stream_url, timedelta(minutes=4))
+        )
+        self.async_on_remove(
             async_dispatcher_connect(
                 self.hass, sip_updated_signal(self.entry.entry_id), self._handle_sip_update
             )
         )
+
+    async def stream_source(self) -> str | None:
+        return _local_stream_url(self.hass, self.entry.entry_id, self._stream_filename)
+
+    @callback
+    def _refresh_stream_url(self, _now: datetime) -> None:
+        if self.stream is not None:
+            self.stream.update_source(
+                _local_stream_url(self.hass, self.entry.entry_id, self._stream_filename)
+            )
 
     @callback
     def _handle_sip_update(self) -> None:
@@ -61,6 +79,7 @@ class _SipCamera(Camera):
 
 class GiraTksCamera(_SipCamera):
 
+    _stream_filename = "live.ts"
     _attr_translation_key = "door_station"
     _attr_icon = "mdi:doorbell-video"
 
@@ -75,12 +94,10 @@ class GiraTksCamera(_SipCamera):
     def is_streaming(self) -> bool:
         return self.sip.media_active
 
-    async def stream_source(self) -> str | None:
-        return _local_stream_url(self.hass, self.entry.entry_id, self.sip.stream_token, "live.ts")
-
 
 class SipPreviewCamera(_SipCamera):
 
+    _stream_filename = "preview.ts"
     _attr_translation_key = "camera_preview"
     _attr_icon = "mdi:camera-wireless"
 
@@ -91,11 +108,8 @@ class SipPreviewCamera(_SipCamera):
     def is_streaming(self) -> bool:
         return self.sip.runtime.call_state == "preview_active" and self.sip.media_active
 
-    async def stream_source(self) -> str | None:
-        return _local_stream_url(self.hass, self.entry.entry_id, self.sip.stream_token, "preview.ts")
 
-
-def _local_stream_url(hass: HomeAssistant, entry_id: str, token: str, name: str) -> str:
+def _local_stream_url(hass: HomeAssistant, entry_id: str, name: str) -> str:
     try:
         base = get_url(hass, allow_internal=True, prefer_external=False)
     except NoURLAvailableError:
@@ -103,4 +117,8 @@ def _local_stream_url(hass: HomeAssistant, entry_id: str, token: str, name: str)
         port = getattr(http, "server_port", None) or 8123
         scheme = "https" if getattr(http, "ssl_certificate", None) else "http"
         base = f"{scheme}://127.0.0.1:{port}"
-    return f"{base.rstrip('/')}/api/gira_tks/{entry_id}/{token}/{name}"
+    path = async_sign_path(
+        hass, f"/api/gira_tks/{entry_id}/{name}", timedelta(minutes=5),
+        use_content_user=True,
+    )
+    return f"{base.rstrip('/')}{path}"
