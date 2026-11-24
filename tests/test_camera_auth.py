@@ -117,7 +117,8 @@ def test_cached_source_is_renewed_before_expiration_and_timer_removed(camera, na
     ]
     entity._refresh_stream_url(None)
     entity._refresh_stream_url(None)
-    assert entity.stream.update_source.call_args.args[0].endswith("authSig=second")
+    assert entity.stream.source == f"http://ha.example:8123/api/gira_tks/entry/{filename}?authSig=second"
+    entity.stream.update_source.assert_not_called()  # would restart a running stream
     for callback in entity.remove_callbacks:
         if callable(callback):
             callback()

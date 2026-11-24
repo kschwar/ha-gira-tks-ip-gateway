@@ -64,9 +64,12 @@ class _SipCamera(Camera):
 
     @callback
     def _refresh_stream_url(self, _now: datetime) -> None:
+        # The signature is only checked when a connection is opened, so an open stream keeps
+        # running. Stream.update_source() would restart the worker and drop the picture; the
+        # worker reads .source on its next (re)connect instead.
         if self.stream is not None:
-            self.stream.update_source(
-                _local_stream_url(self.hass, self.entry.entry_id, self._stream_filename)
+            self.stream.source = _local_stream_url(
+                self.hass, self.entry.entry_id, self._stream_filename
             )
 
     @callback
